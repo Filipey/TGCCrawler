@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: tg_crypto_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: tg_crypto
+
+  pipeline:
+    build: .
+    container_name: tg_crypto_pipeline
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      MONGO_DB_URL: mongodb://mongo:27017
+    volumes:
+      - ./config:/app/config:ro
+      - ./sessions:/app/sessions
+      - ./logs:/app/logs
+      - ./models:/app/models:ro
+    command: ["python", "main.py"]
+
+volumes:
+  mongo_data:
