@@ -309,6 +309,12 @@ docker compose up -d
 
 ---
 
+## TO-DO List
+
+- [ ] Allow selecting triage messages based on a **date range**, not only by message count.  
+- [ ] If a chat (group/channel) contains **temporary messages**, discard that chat due to **GDPR constraints**.  
+- [ ] Experimentally define the default threshold for the **percentage of crypto-related messages** based on **X% of the seed list**.  
+
 ## References
 
 - **Gangopadhyay, S., Dessì, D., Dimitrov, D., Dietze, S.** *TeleScope: A Longitudinal
