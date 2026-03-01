@@ -5,8 +5,13 @@ telethon>=1.34.0
 pymongo>=4.6.0
 
 # Web scraping (seeds)
-scrapling>=0.2.0          # Playwright-powered stealth scraper
-requests>=2.31.0          # HTTP fallback when Scrapling is unavailable
+scrapling>=0.4.1          # Core stealth scraper framework
+curl-cffi>=0.7.4          # TLS/JA3 spoofing to mimic a real browser
+patchright>=1.0.0         # Modified Playwright fork to bypass Cloudflare and anti-bots
+browserforge>=1.1.0       # Forges realistic browser fingerprints (User-Agent, screen resolution)
+camoufox>=1.0.0           # Additional stealth engine used to mask the browser
+msgspec>=0.18.0           # Ultra-fast JSON parser used internally by Scrapling
+requests>=2.31.0          # Silent HTTP fallback if the Scrapling stack fails
 
 # Language detection
 langdetect>=1.0.9         # Primary detector (Naive Bayes, 55 languages)
