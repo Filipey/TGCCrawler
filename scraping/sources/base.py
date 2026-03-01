@@ -105,7 +105,7 @@ class BaseScraper:
     def _build_fetcher(self):
         try:
             from scrapling import StealthyFetcher
-            return StealthyFetcher.configure(auto_match=False)
+            return StealthyFetcher()
         except ImportError as e:
             logger.warning(
                 "Scrapling/Playwright not available — falling back to requests."

@@ -94,7 +94,7 @@ class TGChannelsScraper(BaseScraper):
 
         try:
             from scrapling import Adaptor
-            doc      = Adaptor(html, auto_match=False)
+            doc      = Adaptor(html)
             path_seg = "groups" if chat_type == "group" else "channels"
             anchors  = doc.css(f"a[href*='/{path_seg}/']")
 
