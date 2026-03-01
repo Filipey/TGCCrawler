@@ -1,0 +1,14 @@
+[Telegram]
+api_id     = YOUR_API_ID
+api_hash   = YOUR_API_HASH
+phone      = +5511999999999
+username   = your_telegram_username
+
+[MongoDB]
+uri        = mongodb://localhost:27017
+
+[RoBERTa]
+# Pode ser um caminho local ou um model_id do Hugging Face Hub
+model_path = models/roberta-crypto
+# Se True, usa GPU (cuda); se False, força CPU
+use_gpu    = False
