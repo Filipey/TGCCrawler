@@ -78,7 +78,7 @@ class TGChannelsScraper(BaseScraper):
         self.category_ids          = category_ids   # None = all
         self.delay_between_combos  = delay_between_combos
 
-    # ── Parsing ───────────────────────────────────────────────────────────────
+    # Parsing
 
     def _parse_records(
         self,

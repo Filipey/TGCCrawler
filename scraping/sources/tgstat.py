@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 # URL templates
 
 BASE_URL         = "https://tgstat.com"
-GROUP_URL_TMPL   = BASE_URL + "/ratings/chats/{slug}/public?sort=mau&page={page}"
-CHANNEL_URL_TMPL = BASE_URL + "/ratings/channels/{slug}/public?sort=100&page={page}"
+GROUP_URL_TMPL   = BASE_URL + "/ratings/chats/{slug}/public?sort=mau"
+CHANNEL_URL_TMPL = BASE_URL + "/ratings/channels/{slug}/public?sort=ci"
 
 # CSS pattern observed in TGStat listing cards: <a href="/channel/@username">
 _HREF_PATTERN = re.compile(r"/channel/@?([\w]{5,32})/?$", re.IGNORECASE)
@@ -151,41 +151,27 @@ class TGStatScraper(BaseScraper):
         category:  TGStatCategory,
         chat_type: str,
     ) -> list[ScrapeRecord]:
-        """Iterates all pages for a (category × type) pair until exhausted or max_pages."""
+        """Fetches the top 100 entries for a (category × type) pair (no pagination)."""
         url_tmpl = GROUP_URL_TMPL if chat_type == "group" else CHANNEL_URL_TMPL
 
         # "public" is the "All categories" aggregate and uses a fixed URL pattern
         if category.slug == "public":
             if chat_type == "group":
-                url_tmpl = BASE_URL + "/ratings/chats/public?sort=mau&page={page}"
+                url_tmpl = BASE_URL + "/ratings/chats/public?sort=mau"
             else:
-                url_tmpl = BASE_URL + "/ratings/channels/public?sort=100&page={page}"
+                url_tmpl = BASE_URL + "/ratings/channels/public?sort=ci"
 
-        all_records:    list[ScrapeRecord] = []
-        seen_usernames: set[str]           = set()
+        url = url_tmpl.format(slug=category.slug)
 
-        for page in range(1, self.max_pages + 1):
-            url          = url_tmpl.format(slug=category.slug, page=page)
-            page_records = self.scrape_page(
-                url,
-                category=category,
-                chat_type=chat_type,
-                page=page,
-            )
+        page_records = self.scrape_page(
+            url,
+            category=category,
+            chat_type=chat_type,
+            page=1,
+        )
 
-            new = [r for r in page_records if r.username not in seen_usernames]
-            if not new:
-                logger.debug(
-                    f"[tgstat] {category.slug}/{chat_type} "
-                    f"page {page} — no new entries, stopping pagination."
-                )
-                break
-
-            seen_usernames.update(r.username for r in new)
-            all_records.extend(new)
-            time.sleep(self.delay)
-
-        return all_records
+        time.sleep(self.delay)
+        return page_records
 
     # scrape_all
 
