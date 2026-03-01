@@ -32,8 +32,8 @@ GROUP_URL_TMPL   = BASE_URL + "/ratings/chats/{slug}/public?sort=mau"
 CHANNEL_URL_TMPL = BASE_URL + "/ratings/channels/{slug}/public?sort=ci"
 
 # CSS pattern observed in TGStat listing cards: <a href="/channel/@username">
-_HREF_PATTERN = re.compile(r"/channel/@?([\w]{5,32})/?$", re.IGNORECASE)
-_FALLBACK_RE  = re.compile(r"/channel/@?([\w]{5,32})", re.IGNORECASE)
+_HREF_PATTERN = re.compile(r"/(?:channel|chat)/@?([\w]{5,32})/?$", re.IGNORECASE)
+_FALLBACK_RE  = re.compile(r"/(?:channel|chat)/@?([\w]{5,32})", re.IGNORECASE)
 
 
 class TGStatScraper(BaseScraper):
@@ -77,9 +77,9 @@ class TGStatScraper(BaseScraper):
 
         try:
             from scrapling import Adaptor
-            doc = Adaptor(html, auto_match=False)
+            doc = Adaptor(html)
 
-            for rank_offset, a in enumerate(doc.css("a[href*='/channel/']")):
+            for rank_offset, a in enumerate(doc.css("a[href*='/channel/'], a[href*='/chat/']")):
                 href = a.attrib.get("href", "")
                 m    = _HREF_PATTERN.search(href)
                 if not m:
