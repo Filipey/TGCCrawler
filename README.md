@@ -66,18 +66,18 @@ tg_crypto_pipeline/
         ├─ 3. LanguageDetector.detect()
         │       checks English majority fraction across the message batch
         │       → NOT English: status = discarded_language  ────────────┐
-        │                                                                │
+        │                                                               │
         ├─ 4. RoBERTaCryptoClassifier.classify_batch()                  │
-        │       checks crypto relevance via fine-tuned RoBERTa           │
+        │       checks crypto relevance via fine-tuned RoBERTa          │
         │       → NOT crypto: status = discarded  ───────────────────── ┤
-        │                                                                │
+        │                                                               │
         ├─ 5. Full collection (up to MESSAGES_FULL_COLLECTION msgs)     │
-        │                                                                │
+        │                                                               │
         ├─ 6. DBManager.bulk_insert_messages()                          │
-        │       persists messages to MongoDB                             │
-        │                                                                │
-        ├─ 7. status = collected                                         │
-        │                                                                │
+        │       persists messages to MongoDB                            │
+        │                                                               │
+        ├─ 7. status = collected                                        │
+        │                                                               │
         └─ 8. Snowball: discovered usernames → status = pending  ◄──────┘
                         (forwarded channel sources + @mentions + t.me/ links)
 ```
