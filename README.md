@@ -16,7 +16,7 @@ tg_crypto_pipeline/
 │   ├── telethon_collector.py   # Telethon collector — channels + public groups
 │   ├── language_detector.py    # English majority check (langdetect + langid)
 │   ├── roberta_classifier.py   # RoBERTa inference — crypto vs. non-crypto
-│   └── seed_scraper.py         # Legacy single-file scraper (superseded by scraping/)
+│
 │
 ├── scraping/                   # Modular seed scraping package
 │   ├── sources/
