@@ -44,6 +44,8 @@ from scraping.sources.tgchannels import TGChannelsScraper
 from scraping.sources.tgstat import TGStatScraper
 from scraping.storage.snapshot_store import SnapshotStore
 
+Path("logs").mkdir(exist_ok=True)
+
 logging.basicConfig(
     level    = logging.INFO,
     format   = "%(asctime)s [%(levelname)s] %(name)s — %(message)s",
@@ -75,7 +77,7 @@ def run_tgstat(
     records = scraper.scrape_all()
 
     if args.dry_run:
-        logger.info(f"[dry-run] TGStat → {len(records)} records (not saved)")
+        logger.info(f"[dry-run] TGStat {len(records)} records (not saved)")
         return records
 
     for chat_type in args.types:
@@ -108,7 +110,7 @@ def run_tgchannels(
     records = scraper.scrape_all()
 
     if args.dry_run:
-        logger.info(f"[dry-run] TGChannels → {len(records)} records (not saved)")
+        logger.info(f"[dry-run] TGChannels {len(records)} records (not saved)")
         return records
 
     for chat_type in args.types:
@@ -126,8 +128,6 @@ def run_tgchannels(
 def main(args: argparse.Namespace) -> None:
     today = date.today()
     store = SnapshotStore(data_dir=args.data_dir)
-
-    Path("logs").mkdir(exist_ok=True)
 
     all_records: list[ScrapeRecord] = []
     sources = (
