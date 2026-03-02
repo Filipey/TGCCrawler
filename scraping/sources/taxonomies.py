@@ -90,7 +90,6 @@ class TGChannelsCategory:
 
 
 TGCHANNELS_CATEGORIES: list[TGChannelsCategory] = [
-    TGChannelsCategory("all", "All categories"),
     TGChannelsCategory("2",   "Technologies"),
     TGChannelsCategory("3",   "Cryptocurrencies"),
     TGChannelsCategory("4",   "Travel"),
