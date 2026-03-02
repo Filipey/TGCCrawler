@@ -28,7 +28,6 @@ class TGStatCategory:
 
 
 TGSTAT_CATEGORIES: list[TGStatCategory] = [
-    TGStatCategory("public",        "All categories"),
     TGStatCategory("blogs",         "Blogs"),
     TGStatCategory("news",          "News and media"),
     TGStatCategory("entertainment", "Humor and entertainment"),
