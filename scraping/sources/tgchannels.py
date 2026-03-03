@@ -1,9 +1,11 @@
 # scraping/sources/tgchannels.py
 """
-TelegramChannels.me scraper.
+TelegramChannels.me scraper with live taxonomy discovery.
 
-Collects public groups and channels by ranking across all combinations
-of category x language x type available on the platform.
+The platform's numeric category IDs are NOT stable — they have been observed
+changing between days without notice. To work around this, the scraper always
+fetches the live taxonomy from the ranking page's <select> element before
+starting collection. The static list in taxonomies.py serves only as a fallback.
 
 Base URL:
   https://telegramchannels.me/ranking?language=<lang>&category=<id>&type=<type>&page=N
@@ -12,11 +14,8 @@ Types:
   type=group    public groups
   type=channel  public channels
 
-Categories:
-  category=all  or  category=2..33  (see taxonomies.py)
-
-Languages (language= parameter):
-  en, ru, ar, es, pt, de, fr, it, tr, fa, hi, id, uk, uz, kk
+Categories: discovered dynamically from the page's <select name="category">
+Languages:  stable codes (en, ru, ar, es, ...) — defined in taxonomies.py
 """
 
 from __future__ import annotations
@@ -32,10 +31,18 @@ from .taxonomies import (TGCHANNELS_CATEGORIES, TGCHANNELS_LANGUAGES,
 
 logger = logging.getLogger(__name__)
 
-# URL template
+# URL templates
 
-BASE_URL    = "https://telegramchannels.me"
-RANKING_URL = BASE_URL + "/ranking?language={lang}&category={cat}&type={type}&page={page}"
+BASE_URL     = "https://telegramchannels.me"
+RANKING_URL  = BASE_URL + "/ranking"
+RANKING_PAGE = RANKING_URL + "?language={lang}&category={cat}&type={type}&page={page}"
+
+# Regex for the <select name="category"> option elements
+# Matches: <option value="9">Cryptocurrencies</option>
+_OPTION_RE = re.compile(
+    r'<option\s+value=["\']([^"\']+)["\'][^>]*>\s*([^<]+?)\s*</option>',
+    re.IGNORECASE,
+)
 
 # href patterns observed in the platform HTML
 _GROUPS_RE   = re.compile(r"/groups/([\w]{5,32})/?",   re.IGNORECASE)
@@ -48,16 +55,149 @@ _NAV_BLACKLIST = frozenset({
 })
 
 
+# Taxonomy fetcher
+
+class TGChannelsTaxonomyFetcher:
+    """
+    Fetches the live category taxonomy from TelegramChannels.me.
+
+    Parses the <select name="category"> element on the ranking page to
+    extract the current (value -> label) mapping. This is the only reliable
+    way to get correct IDs because the platform reassigns them without notice.
+
+    Args:
+        base_scraper: A BaseScraper instance used for the HTTP fetch.
+        language:     Language code for the probe request (default "en").
+    """
+
+    _SELECT_RE = re.compile(
+        r'<select[^>]+name=["\']category["\'][^>]*>(.*?)</select>',
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    def __init__(self, base_scraper: BaseScraper, language: str = "en"):
+        self._scraper  = base_scraper
+        self._language = language
+
+    def fetch(self) -> list[TGChannelsCategory]:
+        """
+        Fetches and parses the live taxonomy.
+
+        Returns a list of TGChannelsCategory objects reflecting the current
+        platform state. Always includes the "all" sentinel.
+
+        Falls back to TGCHANNELS_CATEGORIES on any error and emits a WARNING
+        so operators know to investigate.
+        """
+        probe_url = (
+            f"{RANKING_URL}?language={self._language}"
+            f"&category=all&type=group&page=1"
+        )
+        html = self._scraper._fetch_html(probe_url)
+
+        if not html:
+            logger.warning(
+                "[tgchannels taxonomy] Probe fetch failed — "
+                "falling back to static taxonomy. Category IDs may be stale."
+            )
+            return list(TGCHANNELS_CATEGORIES)
+
+        categories = self._parse_select(html)
+
+        if not categories:
+            logger.warning(
+                "[tgchannels taxonomy] Could not parse <select name='category'> — "
+                "falling back to static taxonomy. Category IDs may be stale."
+            )
+            return list(TGCHANNELS_CATEGORIES)
+
+        # Ensure "all" is always present
+        if not any(c.category_id == "all" for c in categories):
+            categories.insert(0, TGChannelsCategory("all", "All Categories"))
+
+        logger.info(
+            f"[tgchannels taxonomy] Live taxonomy fetched: "
+            f"{len(categories)} categories "
+            f"(IDs: {', '.join(c.category_id for c in categories[:5])}...)"
+        )
+        return categories
+
+    def _parse_select(self, html: str) -> list[TGChannelsCategory]:
+        """
+        Extracts <option value="...">Label</option> pairs from the
+        category <select> block.
+
+        Tries two strategies in order:
+          1. Scrapling CSS selector (most accurate)
+          2. Pure regex on the raw HTML (fallback)
+        """
+        # Strategy 1: Scrapling structural parsing
+        try:
+            from scrapling import Adaptor
+            doc = Adaptor(html)
+
+            select = (
+                doc.css("select[name='category']") or
+                doc.css("select[id='category']")   or
+                doc.css("select[name*='category']")
+            )
+
+            if select:
+                options = select[0].css("option")
+                result  = []
+                for opt in options:
+                    value = (opt.attrib.get("value") or "").strip()
+                    label = (opt.text or "").strip()
+                    if value and label:
+                        label = re.sub(r"\s+", " ", label)
+                        result.append(TGChannelsCategory(value, label))
+                if result:
+                    return result
+
+        except (ImportError, Exception) as exc:
+            logger.debug(f"[tgchannels taxonomy] Scrapling parse failed: {exc}")
+
+        # Strategy 2: Regex on the full HTML
+        select_match = self._SELECT_RE.search(html)
+        if not select_match:
+            return self._parse_options_global(html)
+
+        return self._parse_options_global(select_match.group(1))
+
+    @staticmethod
+    def _parse_options_global(html: str) -> list[TGChannelsCategory]:
+        """Extracts all <option value=...> tags from an HTML fragment."""
+        result = []
+        for m in _OPTION_RE.finditer(html):
+            value = m.group(1).strip()
+            label = re.sub(r"\s+", " ", m.group(2)).strip()
+            label = (label
+                     .replace("&amp;", "&")
+                     .replace("&lt;",  "<")
+                     .replace("&gt;",  ">")
+                     .replace("&#39;", "'")
+                     .replace("&quot;", "\""))
+            if value and label:
+                result.append(TGChannelsCategory(value, label))
+        return result
+
+
+# Scraper
+
 class TGChannelsScraper(BaseScraper):
     """
     Scrapes the ranking of public groups and channels from TelegramChannels.me.
+
+    On every run, fetches the live category taxonomy first so that category IDs
+    are always current — the platform reassigns numeric IDs without warning.
 
     Args:
         max_pages:             Maximum pages per combination (default 5).
         languages:             Language codes to query. None = all TGCHANNELS_LANGUAGES.
         chat_types:            Types to collect ("group", "channel"). None = both.
-        category_ids:          Category IDs to query. None = all categories.
+        category_ids:          Whitelist of category IDs (live values). None = all.
         delay_between_combos:  Pause between (category x lang x type) combos (seconds).
+        taxonomy_language:     Language used for the taxonomy probe request.
     """
 
     SOURCE_NAME = "telegramchannels"
@@ -69,14 +209,57 @@ class TGChannelsScraper(BaseScraper):
         chat_types:            list[str] | None = None,
         category_ids:          list[str] | None = None,
         delay_between_combos:  float            = 2.5,
+        taxonomy_language:     str              = "en",
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.max_pages             = max_pages
-        self.languages             = languages or TGCHANNELS_LANGUAGES
-        self.chat_types            = chat_types or TGCHANNELS_TYPES
-        self.category_ids          = category_ids   # None = all
-        self.delay_between_combos  = delay_between_combos
+        self.max_pages            = max_pages
+        self.languages            = languages or TGCHANNELS_LANGUAGES
+        self.chat_types           = chat_types or TGCHANNELS_TYPES
+        self.category_ids         = category_ids
+        self.delay_between_combos = delay_between_combos
+        self.taxonomy_language    = taxonomy_language
+
+        self._taxonomy_fetcher = TGChannelsTaxonomyFetcher(
+            base_scraper=self,
+            language=taxonomy_language,
+        )
+        # Populated on first call to scrape_all() or fetch_taxonomy()
+        self._live_categories: list[TGChannelsCategory] | None = None
+
+    # Taxonomy
+
+    def fetch_taxonomy(self) -> list[TGChannelsCategory]:
+        """
+        Fetches (or returns the cached) live taxonomy for this run.
+        Re-fetches on a new scraper instance; cached within one run.
+        """
+        if self._live_categories is None:
+            self._live_categories = self._taxonomy_fetcher.fetch()
+        return self._live_categories
+
+    def _resolve_categories(self) -> list[TGChannelsCategory]:
+        """
+        Returns the list of categories to scrape for this run.
+        Filters by category_ids whitelist when provided.
+        """
+        live = self.fetch_taxonomy()
+
+        if self.category_ids is None:
+            return live
+
+        live_by_id = {c.category_id: c for c in live}
+        resolved   = [live_by_id[cid] for cid in self.category_ids if cid in live_by_id]
+
+        missing = [cid for cid in self.category_ids if cid not in live_by_id]
+        if missing:
+            logger.warning(
+                f"[tgchannels] Requested category IDs not found in live taxonomy: "
+                f"{missing}. They may have been reassigned — run with "
+                f"--dump-taxonomy to inspect current IDs."
+            )
+
+        return resolved
 
     # Parsing
 
@@ -189,7 +372,7 @@ class TGChannelsScraper(BaseScraper):
         seen_usernames: set[str]           = set()
 
         for page in range(1, self.max_pages + 1):
-            url = RANKING_URL.format(
+            url = RANKING_PAGE.format(
                 lang=language,
                 cat=category.category_id,
                 type=chat_type,
@@ -217,19 +400,13 @@ class TGChannelsScraper(BaseScraper):
 
     def scrape_all(self, **kwargs) -> list[ScrapeRecord]:
         """
-        Iterates all (category x type x language) combinations.
+        Fetches the live taxonomy, then iterates all combinations of
+        (category x type x language).
 
-        A username may appear across multiple combos — that contextual
-        information (category, language) is preserved in each record.
+        The taxonomy fetch adds one HTTP request per scraper instance but
+        guarantees that category IDs are current regardless of platform changes.
         """
-        from .taxonomies import TGCHANNELS_BY_ID
-
-        categories = (
-            [TGCHANNELS_BY_ID[cid] for cid in self.category_ids
-             if cid in TGCHANNELS_BY_ID]
-            if self.category_ids
-            else TGCHANNELS_CATEGORIES
-        )
+        categories = self._resolve_categories()
 
         combos = [
             (cat, ct, lang)
@@ -239,6 +416,12 @@ class TGChannelsScraper(BaseScraper):
         ]
         total        = len(combos)
         all_records: list[ScrapeRecord] = []
+
+        logger.info(
+            f"[tgchannels] Starting — "
+            f"{len(categories)} categories x {len(self.chat_types)} types x "
+            f"{len(self.languages)} languages = {total} combinations"
+        )
 
         for idx, (category, chat_type, language) in enumerate(combos, 1):
             logger.info(
@@ -255,3 +438,35 @@ class TGChannelsScraper(BaseScraper):
             f"Total raw records: {len(all_records)} across {total} combinations."
         )
         return all_records
+
+
+# CLI helpers
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description="TelegramChannels.me scraper CLI")
+    parser.add_argument(
+        "--dump-taxonomy",
+        action="store_true",
+        help="Fetch and print the live category taxonomy as JSON, then exit.",
+    )
+    parser.add_argument(
+        "--language", default="en",
+        help="Language for the taxonomy probe request (default: en)",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
+
+    if args.dump_taxonomy:
+        scraper = TGChannelsScraper(taxonomy_language=args.language)
+        cats    = scraper.fetch_taxonomy()
+        print(json.dumps(
+            [{"id": c.category_id, "label": c.label} for c in cats],
+            indent=2, ensure_ascii=False,
+        ))
+        sys.exit(0)

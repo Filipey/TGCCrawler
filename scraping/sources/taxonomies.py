@@ -9,9 +9,16 @@ Covers all ~44 available topic categories.
 
 TelegramChannels.me
 --------------------
-  ?category=    "all" or numeric IDs 2..33
+  ?category=    "all" or numeric IDs — WARNING: unstable, fetched live at runtime
   ?type=         "group" or "channel"
   ?language=     language code (en, ru, ar, es, pt, de, fr, ...)
+
+  !! The numeric category IDs are NOT stable across days. The platform has been
+  observed silently reassigning the same integer to a different category.
+  TGChannelsScraper always fetches the live <select> taxonomy before scraping.
+  The list below (TGCHANNELS_CATEGORIES) is used only as a fallback when that
+  fetch fails entirely. A WARNING is emitted in that case.
+  Last verified: 2025-07-01
 """
 
 from __future__ import annotations
@@ -85,43 +92,53 @@ TGSTAT_BY_SLUG: dict[str, TGStatCategory] = {c.slug: c for c in TGSTAT_CATEGORIE
 
 @dataclass(frozen=True)
 class TGChannelsCategory:
-    category_id: str   # "all" or integer-string ("2".."33")
+    category_id: str   # "all" or integer-string — UNSTABLE, reassigned without notice
     label: str
 
 
+# Static fallback — used only when the live taxonomy fetch fails.
+# To refresh: python -m scraping.sources.tgchannels --dump-taxonomy
 TGCHANNELS_CATEGORIES: list[TGChannelsCategory] = [
-    TGChannelsCategory("2",   "Technologies"),
-    TGChannelsCategory("3",   "Cryptocurrencies"),
-    TGChannelsCategory("4",   "Travel"),
-    TGChannelsCategory("5",   "Politics"),
-    TGChannelsCategory("6",   "Economics"),
-    TGChannelsCategory("7",   "News"),
-    TGChannelsCategory("8",   "Sport"),
-    TGChannelsCategory("9",   "Entertainment"),
-    TGChannelsCategory("10",  "Humor"),
+    TGChannelsCategory("all", "All Categories"),
+    TGChannelsCategory("1",   "Nature & Animals"),
+    TGChannelsCategory("3",   "Art & Design"),
+    TGChannelsCategory("4",   "Auto & Moto"),
+    TGChannelsCategory("5",   "Blogs"),
+    TGChannelsCategory("6",   "Books & Magazine"),
+    TGChannelsCategory("7",   "Business & Startups"),
+    TGChannelsCategory("8",   "Celebrities"),
+    TGChannelsCategory("9",   "Cryptocurrencies"),
+    TGChannelsCategory("10",  "Economics & Finance"),
     TGChannelsCategory("11",  "Education"),
-    TGChannelsCategory("12",  "Music"),
-    TGChannelsCategory("13",  "Art"),
-    TGChannelsCategory("14",  "Blogs"),
-    TGChannelsCategory("15",  "Books"),
-    TGChannelsCategory("16",  "Business"),
-    TGChannelsCategory("17",  "Food"),
-    TGChannelsCategory("18",  "Health & Fitness"),
-    TGChannelsCategory("19",  "Marketing"),
-    TGChannelsCategory("20",  "Design"),
-    TGChannelsCategory("21",  "Fashion & Beauty"),
-    TGChannelsCategory("22",  "Medicine"),
-    TGChannelsCategory("23",  "Psychology"),
-    TGChannelsCategory("24",  "Religion"),
+    TGChannelsCategory("12",  "Entertainment"),
+    TGChannelsCategory("13",  "Fashion & Beauty"),
+    TGChannelsCategory("14",  "Food"),
+    TGChannelsCategory("15",  "Games & Apps"),
+    TGChannelsCategory("16",  "Health"),
+    TGChannelsCategory("17",  "Languages"),
+    TGChannelsCategory("18",  "Love"),
+    TGChannelsCategory("20",  "Marketing"),
+    TGChannelsCategory("21",  "Music"),
+    TGChannelsCategory("23",  "News & Media"),
+    TGChannelsCategory("24",  "Photo"),
     TGChannelsCategory("25",  "Science"),
-    TGChannelsCategory("26",  "Law"),
-    TGChannelsCategory("27",  "Linguistics"),
-    TGChannelsCategory("28",  "Family & Kids"),
-    TGChannelsCategory("29",  "Animals & Nature"),
-    TGChannelsCategory("30",  "Games"),
-    TGChannelsCategory("31",  "Software & Apps"),
-    TGChannelsCategory("32",  "Video & Films"),
-    TGChannelsCategory("33",  "Other"),
+    TGChannelsCategory("26",  "Self Development"),
+    TGChannelsCategory("27",  "Sports & Fitness"),
+    TGChannelsCategory("28",  "Technology"),
+    TGChannelsCategory("29",  "Travel"),
+    TGChannelsCategory("30",  "Movies & Videos"),
+    TGChannelsCategory("31",  "Other"),
+    TGChannelsCategory("32",  "Shop"),
+    TGChannelsCategory("33",  "Betting"),
+    TGChannelsCategory("34",  "Utilities & Tools"),
+    TGChannelsCategory("35",  "Communication"),
+    TGChannelsCategory("36",  "Telegram"),
+    TGChannelsCategory("37",  "Political"),
+    TGChannelsCategory("38",  "Stickers"),
+    TGChannelsCategory("39",  "NSFW & Adults"),
+    TGChannelsCategory("40",  "Telegram Miniapps & Games"),
+    TGChannelsCategory("41",  "Crypto Airdrop"),
+    TGChannelsCategory("42",  "Crypto & FX Trading"),
 ]
 
 TGCHANNELS_BY_ID: dict[str, TGChannelsCategory] = {
