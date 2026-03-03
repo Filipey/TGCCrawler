@@ -173,7 +173,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-pages",
         type=int,
-        default=5,
+        default=1,
         help="Maximum pages per category / combination",
     )
     parser.add_argument(
