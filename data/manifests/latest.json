@@ -1,26 +1,26 @@
 {
   "tgstats_group": {
-    "date": "2026-03-04",
-    "file": "data/snapshots/tgstats_groups_2026-03-04.jsonl",
-    "n_records": 4199,
-    "updated_at": "2026-03-04T19:34:38.454397+00:00"
+    "date": "2026-03-05",
+    "file": "data/snapshots/tgstats_groups_2026-03-05.jsonl",
+    "n_records": 4699,
+    "updated_at": "2026-03-05T11:35:59.562991+00:00"
   },
   "tgstats_channel": {
-    "date": "2026-03-04",
-    "file": "data/snapshots/tgstats_channels_2026-03-04.jsonl",
-    "n_records": 4196,
-    "updated_at": "2026-03-04T19:34:38.506285+00:00"
+    "date": "2026-03-05",
+    "file": "data/snapshots/tgstats_channels_2026-03-05.jsonl",
+    "n_records": 4696,
+    "updated_at": "2026-03-05T11:35:59.618222+00:00"
   },
   "telegramchannels_group": {
-    "date": "2026-03-04",
-    "file": "data/snapshots/telegramchannels_groups_2026-03-04.jsonl",
+    "date": "2026-03-05",
+    "file": "data/snapshots/telegramchannels_groups_2026-03-05.jsonl",
     "n_records": 1133,
-    "updated_at": "2026-03-04T20:04:45.867183+00:00"
+    "updated_at": "2026-03-05T11:46:16.573002+00:00"
   },
   "telegramchannels_channel": {
-    "date": "2026-03-04",
-    "file": "data/snapshots/telegramchannels_channels_2026-03-04.jsonl",
+    "date": "2026-03-05",
+    "file": "data/snapshots/telegramchannels_channels_2026-03-05.jsonl",
     "n_records": 3067,
-    "updated_at": "2026-03-04T20:04:45.890043+00:00"
+    "updated_at": "2026-03-05T11:46:16.655841+00:00"
   }
 }
