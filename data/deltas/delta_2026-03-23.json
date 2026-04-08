@@ -1,0 +1,122 @@
+[
+  {
+    "date": "2026-03-23",
+    "prev_date": "2026-03-22",
+    "source": "tgstats",
+    "chat_type": "group",
+    "total_today": 4699,
+    "total_prev": 4699,
+    "new": [
+      "cdtianji",
+      "chatikn0",
+      "chatiks_piarvz",
+      "cute_girls_chatting_group",
+      "desiauntylover09",
+      "forex_chats",
+      "nochznakomstva3",
+      "novouzenskiy",
+      "parkdaneshjoo",
+      "ru2chtrap",
+      "saltovka_new_girl",
+      "virtik112",
+      "womatoule"
+    ],
+    "removed": [
+      "bolgaria_uslugi",
+      "chatik_dnr_lnr",
+      "chel74bysi",
+      "gentelservicecards",
+      "izmiraktifpasifarama1",
+      "kukold_chat18",
+      "lovenoch5",
+      "omskoflove",
+      "vip_sex_and_love",
+      "vip_sex_relations",
+      "vnaturevz",
+      "volgograd_znakomstva3",
+      "vpiska996"
+    ],
+    "n_new": 13,
+    "n_removed": 13,
+    "net_change": 0
+  },
+  {
+    "date": "2026-03-23",
+    "prev_date": "2026-03-22",
+    "source": "tgstats",
+    "chat_type": "channel",
+    "total_today": 4697,
+    "total_prev": 4697,
+    "new": [
+      "anvar_web",
+      "baranovazozh",
+      "bezcerdcaa",
+      "dr_voenvrach",
+      "fiskigold",
+      "insider_zsy",
+      "kneckcseleakages2026",
+      "marketing_ukr",
+      "radio_learn",
+      "sinfdoshlar_kanaii",
+      "spectr_equipment",
+      "studentcha_hazillar",
+      "studyyenglishh",
+      "success_motivational_hindi_video",
+      "v2ray_alpha"
+    ],
+    "removed": [
+      "adversum_school1",
+      "akramov_tv",
+      "bachinskaya_oxana",
+      "dataleak",
+      "foydali_tibbiyot_uz",
+      "giftinfoprod",
+      "grigor",
+      "jaloliddin_ahmadaliyev_jalolidin",
+      "koaung66688",
+      "marketingav",
+      "naruto_shippuden_baruto_dub_dual",
+      "plekhanovuniverse",
+      "scarlet_programs",
+      "taomlanish_ilmi",
+      "tvrain"
+    ],
+    "n_new": 15,
+    "n_removed": 15,
+    "net_change": 0
+  },
+  {
+    "date": "2026-03-23",
+    "prev_date": "2026-03-22",
+    "source": "telegramchannels",
+    "chat_type": "group",
+    "total_today": 224,
+    "total_prev": 224,
+    "new": [],
+    "removed": [],
+    "n_new": 0,
+    "n_removed": 0,
+    "net_change": 0
+  },
+  {
+    "date": "2026-03-23",
+    "prev_date": "2026-03-22",
+    "source": "telegramchannels",
+    "chat_type": "channel",
+    "total_today": 1112,
+    "total_prev": 1110,
+    "new": [
+      "letraseductoras",
+      "milunaenacuario",
+      "poetik_terapia",
+      "profitfxacademypy"
+    ],
+    "removed": [
+      "cotorrachat",
+      "dominicskerrett"
+    ],
+    "n_new": 4,
+    "n_removed": 2,
+    "net_change": 2
+  }
+]

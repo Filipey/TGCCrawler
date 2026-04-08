@@ -111,7 +111,7 @@ def _get_uri(config_file: str = "config/config.ini") -> str:
         return uri
     cfg = configparser.ConfigParser()
     cfg.read(config_file)
-    return cfg.get("MongoDB", "uri", fallback="mongodb://localhost:27017")
+    return cfg.get("MongoDB", "uri", fallback="mongodb://admin:admin@localhost:27017")
 
 
 class DBManager:
