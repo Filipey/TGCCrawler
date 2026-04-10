@@ -32,6 +32,7 @@ import asyncio
 import configparser
 import datetime
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -277,6 +278,8 @@ class TelegramCollector:
         self.api_hash = cfg["Telegram"]["api_hash"]
         self.phone    = cfg["Telegram"]["phone"]
         self.username = cfg["Telegram"]["username"]
+
+        os.makedirs("sessions", exist_ok=True)
 
         self.client = TelegramClient(
             f"sessions/{self.username}",
