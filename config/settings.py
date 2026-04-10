@@ -44,7 +44,7 @@ LANGUAGE_USE_LANGID        = True
 ROBERTA_MODEL_PATH   = "models/roberta-crypto"
 ROBERTA_BATCH_SIZE   = 32
 ROBERTA_THRESHOLD    = 0.5
-ROBERTA_CRYPTO_LABEL = "crypto"
+ROBERTA_CRYPTO_LABEL = 1
 
 SEED_SOURCES = {
     "tgstats":          "https://tgstat.com/ratings",
