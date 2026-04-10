@@ -2,24 +2,33 @@
 """
 TG Crypto Pipeline — Main Orchestrator
 
-Queue-driven loop that processes one Telegram chat at a time:
+Queue-driven loop that processes one Telegram chat at a time.
+
+Pipeline per chat:
 
     1.  Pop the next 'pending' chat from MongoDB (atomic operation).
-    2.  Collect N messages for triage via Telethon.
-    3.  Language detection — verify the chat is predominantly English.
-            → Non-English: mark as 'discarded_language' and skip.
-    4.  RoBERTa classification — verify the chat is crypto-related.
-            → Non-crypto:  mark as 'discarded' and skip.
-    5.  Full collection of up to MESSAGES_FULL_COLLECTION messages.
-    6.  Persist messages to MongoDB.
-    7.  Mark chat as 'collected'.
-    8.  Snowball: enqueue discovered usernames as new 'pending' entries.
-    9.  Repeat until the queue is empty or SIGINT/SIGTERM is received.
+    2.  Determine collection mode based on source:
+            seed     (tgstats | telegramchannels):
+                Collect all messages in the fixed 30-day window
+                [COLLECT_DATE_FROM, COLLECT_DATE_TO].
+            snowball:
+                Try the 30-day window first.  If that yields < SNOWBALL_MIN_MESSAGES,
+                re-collect the last SNOWBALL_FALLBACK_LIMIT messages regardless of date.
+    3.  TTL check — if any message has ttl_period: mark 'discarded_ttl' and skip.
+    4.  Language detection on the full message batch.
+            → Not English: mark 'discarded_language' and skip.
+    5.  RoBERTa classification on all messages (English chat → all msgs sent).
+    6.  Compute crypto_fraction = n_crypto / n_english.
+    7.  Persist all messages to MongoDB.
+    8.  Mark chat as 'analysed' (intermediate status; threshold decided later
+        from the CDF of crypto_fraction across all analysed chats).
+    9.  Snowball: enqueue discovered usernames as new 'pending' entries.
+    10. Repeat until queue empty or SIGINT/SIGTERM received.
 
 Fault tolerance:
-    - FloodWaitError:  respects the Telegram-mandated wait time and resumes.
-    - Per-chat errors: marks status='error' and moves to the next chat.
-    - SIGINT/SIGTERM:  graceful shutdown — finishes current chat before exiting.
+    - FloodWaitError:  respects the Telegram-mandated wait and resumes.
+    - Per-chat errors: marks status='error' and continues.
+    - SIGINT/SIGTERM:  graceful shutdown after finishing current chat.
 """
 
 from __future__ import annotations
@@ -34,11 +43,12 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Optional
 
-from config.settings import (LANGUAGE_ENGLISH_THRESHOLD, LANGUAGE_MIN_CHARS,
-                             LANGUAGE_USE_LANGID, MESSAGES_FOR_CLASSIFICATION,
-                             MESSAGES_FULL_COLLECTION, ROBERTA_BATCH_SIZE,
+from config.settings import (COLLECT_DATE_FROM, COLLECT_DATE_TO,
+                             LANGUAGE_ENGLISH_THRESHOLD, LANGUAGE_MIN_CHARS,
+                             LANGUAGE_USE_LANGID, ROBERTA_BATCH_SIZE,
                              ROBERTA_CRYPTO_LABEL, ROBERTA_MODEL_PATH,
-                             ROBERTA_THRESHOLD, STATUS_PENDING)
+                             ROBERTA_THRESHOLD, SNOWBALL_FALLBACK_LIMIT,
+                             SNOWBALL_MIN_MESSAGES, STATUS_PENDING)
 from modules.db_manager import DBManager
 from modules.language_detector import build_language_detector
 from modules.roberta_classifier import build_classifier
@@ -46,14 +56,18 @@ from modules.telethon_collector import TelegramCollector
 
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
-    level   = logging.INFO,
-    format  = "%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-    handlers=[
+    level    = logging.INFO,
+    format   = "%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    handlers = [
         logging.StreamHandler(sys.stdout),
         logging.FileHandler("logs/pipeline.log", encoding="utf-8"),
     ],
 )
 logger = logging.getLogger("main")
+
+# Chat sources that come from curated seed lists (known-active chats).
+# Everything else is treated as a snowball candidate with unknown activity.
+_SEED_SOURCES = frozenset({"tgstats", "telegramchannels"})
 
 
 def load_config(path: str = "config/config.ini") -> configparser.ConfigParser:
@@ -62,8 +76,6 @@ def load_config(path: str = "config/config.ini") -> configparser.ConfigParser:
     return cfg
 
 
-# Orchestrator
-
 class PipelineOrchestrator:
     """
     Coordinates the full collection pipeline for a MongoDB-backed queue.
@@ -71,15 +83,14 @@ class PipelineOrchestrator:
     Components:
         - DBManager:          queue management + persistence
         - TelegramCollector:  Telethon-based message collection
-        - LanguageDetector:   English majority check (step 3)
-        - CryptoClassifier:   RoBERTa crypto relevance filter (step 4)
+        - LanguageDetector:   English majority check
+        - CryptoClassifier:   RoBERTa per-message classification
     """
 
     def __init__(
         self,
-        config_file:      str  = "config/config.ini",
-        mock_classifier:  bool = False,
-        mock_lang:        bool = False,
+        config_file:     str  = "config/config.ini",
+        mock_classifier: bool = False,
     ):
         cfg = load_config(config_file)
 
@@ -107,52 +118,77 @@ class PipelineOrchestrator:
         self._shutdown = False
 
     def _handle_signal(self, signum, frame) -> None:
-        logger.warning(" Shutdown signal received. Finishing current task...")
+        logger.warning("Shutdown signal received. Finishing current task...")
         self._shutdown = True
 
     @staticmethod
     def _serialise_message(msg) -> dict:
-        """
-        Converts a CollectedMessage dataclass to a MongoDB-ready dict.
-        Nested dataclasses (TelegramEntity, ReactionCount) are converted
-        to plain dicts. Datetime fields are preserved as-is (pymongo handles them).
-        """
         d = asdict(msg)
-        # asdict() recursively converts nested dataclasses — no extra work needed.
-        # Ensure datetime fields that might be non-datetime are set to None.
         for date_field in ("date", "edit_date", "forwarded_date"):
             if d.get(date_field) and not isinstance(d[date_field], datetime):
                 d[date_field] = None
         return d
 
-    async def _process_chat(self, chat_doc: dict) -> None:
+    async def _collect_for_chat(self, chat_key: str, source: str):
         """
-        Runs the full pipeline for a single chat document.
+        Runs the collection strategy appropriate for the chat source.
 
-        Pipeline steps:
-            1. Triage collection  (MESSAGES_FOR_CLASSIFICATION messages)
-            2. Language detection (English majority check)
-            3. RoBERTa classification (crypto relevance)
-            4. Full collection    (MESSAGES_FULL_COLLECTION messages)
-            5. Persistence + snowball enqueue
+        Seed chats → fixed 30-day window, no fallback.
+        Snowball chats → 30-day window first; if < SNOWBALL_MIN_MESSAGES,
+                         re-collect last SNOWBALL_FALLBACK_LIMIT messages.
+
+        Returns (CollectionResult, collect_mode) where collect_mode is
+        "window" or "fallback".
         """
+        is_seed = source in _SEED_SOURCES
+
+        result = await self.collector.collect_messages(
+            username  = chat_key,
+            date_from = COLLECT_DATE_FROM,
+            date_to   = COLLECT_DATE_TO,
+        )
+
+        # Propagate TTL immediately — no point checking message count
+        if result.has_ttl:
+            return result, "window"
+
+        if is_seed or len(result.messages) >= SNOWBALL_MIN_MESSAGES:
+            return result, "window"
+
+        # Snowball fallback: not enough messages in the window
+        logger.info(
+            f"[{chat_key}] Window yielded only {len(result.messages)} messages "
+            f"(< {SNOWBALL_MIN_MESSAGES}) — falling back to last "
+            f"{SNOWBALL_FALLBACK_LIMIT} messages."
+        )
+        result = await self.collector.collect_messages(
+            username = chat_key,
+            limit    = SNOWBALL_FALLBACK_LIMIT,
+        )
+        return result, "fallback"
+
+    async def _process_chat(self, chat_doc: dict) -> None:
         chat_key = chat_doc["_id"]
-        logger.info(f"━━ Processing: '{chat_key}' (source={chat_doc.get('source')!r})")
+        source   = chat_doc.get("source", "unknown")
+        logger.info(f"━━ Processing: '{chat_key}'  source={source!r}")
 
         try:
-            triage = await self.collector.collect_messages(
-                username = chat_key,
-                limit    = MESSAGES_FOR_CLASSIFICATION,
-            )
-            texts = [m.text for m in triage.messages if m.text.strip()]
+            # Step 1 & 2: Collect
+            result, collect_mode = await self._collect_for_chat(chat_key, source)
 
-            if not texts:
-                logger.warning(f"[{chat_key}] No text content found — discarding.")
-                self.db.mark_chat_discarded(chat_key, roberta_score=0.0)
+            # Step 3: TTL check
+            if result.has_ttl:
+                logger.info(f"[{chat_key}] Discarding — disappearing messages (TTL).")
+                self.db.mark_chat_discarded(chat_key, reason="ttl")
                 return
 
-            lang_result = self.lang_detector.detect(triage.messages)
+            if not result.messages:
+                logger.warning(f"[{chat_key}] No messages collected — marking error.")
+                self.db.mark_chat_error(chat_key, "No messages collected in window.")
+                return
 
+            # Step 4: Language detection
+            lang_result = self.lang_detector.detect(result.messages)
             lang_summary = {
                 "is_english":        lang_result.is_english,
                 "dominant_language": lang_result.dominant_language,
@@ -163,9 +199,9 @@ class PipelineOrchestrator:
 
             if not lang_result.is_english:
                 logger.info(
-                    f"[{chat_key}] Language check FAILED — "
-                    f"dominant='{lang_result.dominant_language}' "
-                    f"english_fraction={lang_result.english_fraction:.1%}"
+                    f"[{chat_key}] Language FAILED — "
+                    f"dominant='{lang_result.dominant_language}'  "
+                    f"en_fraction={lang_result.english_fraction:.1%}"
                 )
                 self.db._chats.update_one(
                     {"_id": chat_key},
@@ -178,19 +214,33 @@ class PipelineOrchestrator:
                 return
 
             logger.info(
-                f"[{chat_key}] Language check PASSED "
-                f"english_fraction={lang_result.english_fraction:.1%} "
-                f"(dominant='{lang_result.dominant_language}')"
+                f"[{chat_key}] Language PASSED — "
+                f"en_fraction={lang_result.english_fraction:.1%}"
             )
 
+            # Step 5: RoBERTa on all messages
+            texts      = [m.text for m in result.messages if m.text.strip()]
             clf_result = self.classifier.classify_batch(texts)
+
+            # Step 6: Compute crypto_fraction
+            n_messages_total = len(result.messages)
+            n_english        = len(texts)          # messages with non-empty text
+            n_crypto         = clf_result.n_crypto
+            crypto_fraction  = n_crypto / n_english if n_english > 0 else 0.0
+
             logger.info(
-                f"[{chat_key}] RoBERTa is_crypto={clf_result.is_crypto} "
-                f"score={clf_result.score:.3f} "
-                f"({clf_result.n_crypto}/{clf_result.n_messages} msgs crypto)"
+                f"[{chat_key}] RoBERTa — "
+                f"n_total={n_messages_total}  n_english={n_english}  "
+                f"n_crypto={n_crypto}  crypto_fraction={crypto_fraction:.3f}"
             )
 
-            meta = triage.metadata
+            # Step 7: Persist messages
+            msg_dicts = [self._serialise_message(m) for m in result.messages]
+            inserted  = self.db.bulk_insert_messages(msg_dicts)
+            logger.info(f"[{chat_key}] {inserted}/{len(msg_dicts)} messages stored.")
+
+            # Step 8: Mark as analysed
+            meta = result.metadata
             chat_metadata = {
                 "telegram_id":        meta.telegram_id,
                 "type":               meta.chat_type,
@@ -205,48 +255,32 @@ class PipelineOrchestrator:
                 "restriction_reason": meta.restriction_reason,
                 "creation_date":      meta.creation_date,
             }
+            collection_stats = {
+                "n_messages_total":  n_messages_total,
+                "n_english":         n_english,
+                "n_crypto":          n_crypto,
+                "crypto_fraction":   round(crypto_fraction, 6),
+                "collect_mode":      collect_mode,
+                "date_from":         COLLECT_DATE_FROM if collect_mode == "window" else None,
+                "date_to":           COLLECT_DATE_TO   if collect_mode == "window" else None,
+            }
 
-            if not clf_result.is_crypto:
-                self.db.mark_chat_discarded(chat_key, roberta_score=clf_result.score)
-                return
-
-            if (
-                MESSAGES_FULL_COLLECTION
-                and MESSAGES_FULL_COLLECTION > MESSAGES_FOR_CLASSIFICATION
-            ):
-                logger.info(
-                    f"[{chat_key}] Collecting full batch "
-                    f"(up to {MESSAGES_FULL_COLLECTION} messages)…"
-                )
-                full_result      = await self.collector.collect_messages(
-                    username = chat_key,
-                    limit    = MESSAGES_FULL_COLLECTION,
-                )
-                all_messages     = full_result.messages
-                snowball_targets = full_result.snowball_usernames
-            else:
-                all_messages     = triage.messages
-                snowball_targets = triage.snowball_usernames
-
-            msg_dicts = [self._serialise_message(m) for m in all_messages]
-            inserted  = self.db.bulk_insert_messages(msg_dicts)
-            logger.info(f"[{chat_key}] {inserted} messages stored in MongoDB")
-
-            self.db.mark_chat_collected(
-                chat_id_str   = chat_key,
-                metadata      = chat_metadata,
-                roberta_score = clf_result.score,
-                lang_result   = lang_summary,
+            self.db.mark_chat_analysed(
+                chat_id_str      = chat_key,
+                metadata         = chat_metadata,
+                lang_result      = lang_summary,
+                collection_stats = collection_stats,
             )
 
-            if snowball_targets:
+            # Step 9: Snowball
+            if result.snowball_usernames:
                 added = self.db.bulk_upsert_pending(
-                    usernames = snowball_targets,
+                    usernames = result.snowball_usernames,
                     source    = "snowball",
                 )
                 logger.info(
-                    f"[{chat_key}] Snowball: {len(snowball_targets)} candidates, "
-                    f"{added} newly enqueued"
+                    f"[{chat_key}] Snowball: "
+                    f"{len(result.snowball_usernames)} candidates, {added} new."
                 )
 
         except ValueError as exc:
@@ -256,14 +290,12 @@ class PipelineOrchestrator:
             logger.exception(f"[{chat_key}] Unexpected error: {exc}")
             self.db.mark_chat_error(chat_key, str(exc))
 
-    # Main loop
-
     async def run(self) -> None:
         signal.signal(signal.SIGINT,  self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
         async with self.collector:
-            logger.info("✓ Pipeline started. Waiting for tasks in the queue…")
+            logger.info("✓ Pipeline started.")
             empty_polls = 0
 
             while not self._shutdown:
@@ -272,7 +304,7 @@ class PipelineOrchestrator:
 
                 if chat_doc is None:
                     empty_polls += 1
-                    wait = min(30 * empty_polls, 300)  # exponential backoff up to 5 min
+                    wait = min(30 * empty_polls, 300)
                     logger.info(f"[queue] Empty. Waiting {wait}s… (poll #{empty_polls})")
                     await asyncio.sleep(wait)
                     continue
@@ -281,14 +313,11 @@ class PipelineOrchestrator:
                 try:
                     await self._process_chat(chat_doc)
                 except Exception as exc:
-                    # Safety net: loop must never crash
                     logger.exception(f"Critical error in _process_chat: {exc}")
 
             logger.info("✓ Graceful shutdown complete.")
             self.db.close()
 
-
-# Entry point
 
 if __name__ == "__main__":
     import argparse
