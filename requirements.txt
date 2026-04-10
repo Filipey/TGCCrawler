@@ -26,6 +26,7 @@ torch>=2.2.0              # PyTorch backend (CPU or CUDA)
 # Utilities
 tqdm>=4.66.0
 python-dotenv>=1.0.0
+pyarrow>=23.0.1
 
 # Testing
 pytest>=8.0.0
