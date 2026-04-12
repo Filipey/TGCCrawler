@@ -44,6 +44,8 @@ from pathlib import Path
 # Allow running from the project root or from /scripts
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from telethon.errors import FloodWaitError
+
 from config.settings import (COLLECT_DATE_FROM, COLLECT_DATE_TO,
                              LANGUAGE_ENGLISH_THRESHOLD, LANGUAGE_MIN_CHARS,
                              LANGUAGE_USE_LANGID, ROBERTA_BATCH_SIZE,
@@ -322,15 +324,31 @@ async def run(args: argparse.Namespace) -> None:
             if chat_doc is None:
                 logger.info("Queue empty — nothing more to process.")
                 break
-
-            status = await process_chat(
-                chat_doc   = chat_doc,
-                db         = db,
-                collector  = collector,
-                lang_det   = lang_det,
-                classifier = classifier,
-                dry_run    = args.dry_run,
-            )
+            try:
+                
+              status = await process_chat(
+                  chat_doc   = chat_doc,
+                  db         = db,
+                  collector  = collector,
+                  lang_det   = lang_det,
+                  classifier = classifier,
+                  dry_run    = args.dry_run,
+              )
+            except FloodWaitError as exc:
+                # FloodWait that escaped process_chat — pause the entire loop,
+                # reset the chat to pending, and wait before continuing.
+                chat_key = chat_doc["_id"]
+                wait     = exc.seconds + 5
+                logger.warning(
+                    f"[{chat_key}] FloodWaitError: Telegram requires {exc.seconds}s wait. "
+                    f"Resetting chat to pending and sleeping {wait}s..."
+                )
+                db._chats.update_one(
+                    {"_id": chat_key},
+                    {"$set": {"status": STATUS_PENDING, "error_msg": None}},
+                )
+                await asyncio.sleep(wait)
+                continue   # retry from queue without incrementing processed
             counts[status] = counts.get(status, 0) + 1
             processed += 1
     logger.info("─" * 60)

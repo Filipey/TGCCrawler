@@ -405,12 +405,26 @@ class TelegramCollector:
                if mode == "window" else f"limit={limit}")
         )
 
-        try:
-            entity = await self.client.get_entity(username)
-        except (UsernameInvalidError, UsernameNotOccupiedError) as exc:
-            raise ValueError(f"Username not found or invalid: '{username}'") from exc
-        except Exception as exc:
-            raise RuntimeError(f"Failed to resolve entity '{username}': {exc}") from exc
+        for attempt in range(2):
+          try:
+              entity = await self.client.get_entity(username)
+              break
+          except FloodWaitError as exc:
+            if attempt == 0:
+                logger.warning(
+                    f"[telethon] FloodWait on get_entity '{username}': "
+                    f"waiting {exc.seconds}s before retry..."
+                )
+                await asyncio.sleep(exc.seconds + 5)
+            else:
+                raise RuntimeError(
+                    f"FloodWait persists after waiting for '{username}': "
+                    f"{exc.seconds}s required"
+                ) from exc
+          except (UsernameInvalidError, UsernameNotOccupiedError) as exc:
+              raise ValueError(f"Username not found or invalid: '{username}'") from exc
+          except Exception as exc:
+              raise RuntimeError(f"Failed to resolve entity '{username}': {exc}") from exc
 
         metadata     = await self._get_chat_metadata(entity)
         messages:    list[CollectedMessage] = []
