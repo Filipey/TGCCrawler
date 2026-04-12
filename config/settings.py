@@ -21,12 +21,12 @@ STATUS_DISCARDED_LANGUAGE = "discarded_language"  # failed English majority chec
 STATUS_DISCARDED_TTL      = "discarded_ttl"       # chat uses disappearing messages
 STATUS_ERROR              = "error"
 
-# Fixed crawl window: March 2025 (last 30 days before the 2025-04-01 cutoff).
+# Fixed crawl window: March 2026 (last 30 days before the 2026-04-01 cutoff).
 # Seed chats always use this window.
 # Snowball chats use this window when it yields >= SNOWBALL_MIN_MESSAGES,
 # otherwise fall back to the last SNOWBALL_FALLBACK_LIMIT messages (no date bound).
-COLLECT_DATE_FROM = datetime(2025, 3, 1,  0,  0,  0, tzinfo=timezone.utc)
-COLLECT_DATE_TO   = datetime(2025, 4, 1, 23, 59, 59, tzinfo=timezone.utc)
+COLLECT_DATE_FROM = datetime(2026, 3, 1,  0,  0,  0, tzinfo=timezone.utc)
+COLLECT_DATE_TO   = datetime(2026, 4, 1, 23, 59, 59, tzinfo=timezone.utc)
 
 # If a snowball chat has fewer than this many messages in the 30-day window,
 # fall back to collecting the last SNOWBALL_FALLBACK_LIMIT messages regardless
