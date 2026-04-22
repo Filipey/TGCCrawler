@@ -405,144 +405,185 @@ class TelegramCollector:
                if mode == "window" else f"limit={limit}")
         )
 
+        # Resolve entity - retry once after honouring any FloodWait
         for attempt in range(2):
-          try:
-              entity = await self.client.get_entity(username)
-              break
-          except FloodWaitError as exc:
-            if attempt == 0:
-                logger.warning(
-                    f"[telethon] FloodWait on get_entity '{username}': "
-                    f"waiting {exc.seconds}s before retry..."
-                )
-                await asyncio.sleep(exc.seconds + 5)
-            else:
-                raise RuntimeError(
-                    f"FloodWait persists after waiting for '{username}': "
-                    f"{exc.seconds}s required"
-                ) from exc
-          except (UsernameInvalidError, UsernameNotOccupiedError) as exc:
-              raise ValueError(f"Username not found or invalid: '{username}'") from exc
-          except Exception as exc:
-              raise RuntimeError(f"Failed to resolve entity '{username}': {exc}") from exc
+            try:
+                entity = await self.client.get_entity(username)
+                break
+            except FloodWaitError as exc:
+                if attempt == 0:
+                    logger.warning(
+                        f"[telethon] FloodWait on get_entity '{username}': "
+                        f"waiting {exc.seconds}s before retry..."
+                    )
+                    await asyncio.sleep(exc.seconds + 5)
+                else:
+                    raise RuntimeError(
+                        f"FloodWait persists after waiting for '{username}': "
+                        f"{exc.seconds}s required"
+                    ) from exc
+            except (UsernameInvalidError, UsernameNotOccupiedError) as exc:
+                raise ValueError(f"Username not found or invalid: '{username}'") from exc
+            except Exception as exc:
+                raise RuntimeError(f"Failed to resolve entity '{username}': {exc}") from exc
 
-        metadata     = await self._get_chat_metadata(entity)
-        messages:    list[CollectedMessage] = []
-        snowball_set: set[str]              = set()
+        metadata      = await self._get_chat_metadata(entity)
+        messages:     list[CollectedMessage] = []
+        snowball_set: set[str]               = set()
 
+        # Build iter_messages kwargs based on mode
         iter_kwargs: dict = {}
         if mode == "window":
             iter_kwargs["offset_date"] = date_to
-            iter_kwargs["limit"]       = None
+            iter_kwargs["limit"] = None
         else:
             iter_kwargs["limit"] = limit
 
-        async for msg in self.client.iter_messages(entity, **iter_kwargs):
-            if not isinstance(msg, types.Message):
-                continue
+        # Use takeout session for bulk export - Telegram applies more
+        # permissive rate limits than the standard API mode.
+        # NOTE: on first use, Telegram will send a confirmation notification
+        # to the account's app - accept it before the takeout can proceed.
+        async with self.client.takeout(
+            channels=True,
+            chats=True,
+            megagroups=True,
+        ) as takeout:
+            iterator = takeout.iter_messages(
+                entity,
+                wait_time=0.5,
+                **iter_kwargs,
+            )
 
-            # TTL check: abort the entire chat immediately
-            if getattr(msg, "ttl_period", None):
-                logger.info(f"[telethon] '{username}' has TTL messages — flagging chat.")
-                await asyncio.sleep(CHAT_SLEEP_SEC)
-                return CollectionResult(
-                    metadata           = metadata,
-                    messages           = [],
-                    snowball_usernames = [],
-                    has_ttl            = True,
-                )
+            while True:
+                try:
+                    msg = await iterator.__anext__()
+                except StopAsyncIteration:
+                    break
+                except FloodWaitError as exc:
+                    logger.warning(
+                        f"[telethon] FloodWait while collecting '{username}': "
+                        f"sleeping {exc.seconds}s..."
+                    )
+                    await asyncio.sleep(exc.seconds)
+                    continue
+                except Exception as exc:
+                    logger.exception(
+                        f"[telethon] Unexpected error while iterating '{username}': {exc}"
+                    )
+                    break
 
-            if mode == "window" and msg.date < date_from:
-                break
+                if not isinstance(msg, types.Message):
+                    continue
 
-            text = msg.message or ""
+                # TTL check - abort the entire chat immediately
+                if getattr(msg, "ttl_period", None):
+                    logger.info(f"[telethon] '{username}' has TTL messages — flagging chat.")
+                    await asyncio.sleep(CHAT_SLEEP_SEC)
+                    return CollectionResult(
+                        metadata           = metadata,
+                        messages           = [],
+                        snowball_usernames = [],
+                        has_ttl            = True,
+                    )
 
-            if not text and not msg.media:
-                continue
+                # Window mode: stop once we go past the lower date bound
+                if mode == "window" and msg.date < date_from:
+                    break
 
-            is_forwarded          = bool(msg.forward)
-            fwd_id:   Optional[int]              = None
-            fwd_type: Optional[str]              = None
-            fwd_name: Optional[str]              = None
-            fwd_date: Optional[datetime.datetime] = None
-            fwd_msg_id: Optional[int]            = None
+                text = msg.message or ""
 
-            if msg.forward:
-                fwd_id, fwd_type = _peer_id_type(msg.forward.from_id)
-                fwd_date         = msg.forward.date
-                fwd_name         = getattr(msg.forward, "from_name", None)
-                fwd_msg_id       = getattr(msg.forward, "channel_post", None)
+                # Skip completely empty messages (no text AND no media)
+                if not text and not msg.media:
+                    continue
 
-                if (
-                    msg.forward.channel_post
-                    and isinstance(msg.forward.from_id, types.PeerChannel)
-                ):
-                    try:
-                        fwd_entity = await self.client.get_entity(msg.forward.from_id)
-                        if getattr(fwd_entity, "username", None):
-                            snowball_set.add(fwd_entity.username.lower())
-                    except Exception:
-                        pass
+                # Forward provenance
+                is_forwarded= bool(msg.forward)
+                fwd_id:   Optional[int] = None
+                fwd_type: Optional[str] = None
+                fwd_name: Optional[str] = None
+                fwd_date: Optional[datetime.datetime] = None
+                fwd_msg_id: Optional[int] = None
 
-            author_id:          Optional[int] = None
-            is_bot_author:      bool          = False
-            is_verified_author: bool          = False
+                if msg.forward:
+                    fwd_id, fwd_type = _peer_id_type(msg.forward.from_id)
+                    fwd_date = msg.forward.date
+                    fwd_name = getattr(msg.forward, "from_name", None)
+                    fwd_msg_id = getattr(msg.forward, "channel_post", None)
 
-            if msg.from_id:
-                author_id, _ = _peer_id_type(msg.from_id)
+                    if (
+                        msg.forward.channel_post
+                        and isinstance(msg.forward.from_id, types.PeerChannel)
+                    ):
+                        try:
+                            fwd_entity = await self.client.get_entity(msg.forward.from_id)
+                            if getattr(fwd_entity, "username", None):
+                                snowball_set.add(fwd_entity.username.lower())
+                        except Exception:
+                            pass
 
-            sender = getattr(msg, "sender", None)
-            if sender:
-                is_bot_author      = bool(getattr(sender, "bot",      False))
-                is_verified_author = bool(getattr(sender, "verified", False))
+                # Authorship
+                author_id: Optional[int] = None
+                is_bot_author: bool = False
+                is_verified_author: bool = False
 
-            reply_to_id: Optional[int] = None
-            if msg.reply_to and hasattr(msg.reply_to, "reply_to_msg_id"):
-                reply_to_id = msg.reply_to.reply_to_msg_id
+                if msg.from_id:
+                    author_id, _ = _peer_id_type(msg.from_id)
 
-            views          = getattr(msg, "views",    None)
-            forwards_count = getattr(msg, "forwards", None)
-            reactions      = _extract_reactions(msg)
+                sender = getattr(msg, "sender", None)
+                if sender:
+                    is_bot_author = bool(getattr(sender, "bot",      False))
+                    is_verified_author = bool(getattr(sender, "verified", False))
 
-            tg_entities = _extract_entities(msg)
-            hashtags    = _extract_hashtags(text) if text else []
-            tg_targets  = _extract_tg_targets(text) if text else []
-            urls        = _URL_RE.findall(text) if text else []
+                # Threading
+                reply_to_id: Optional[int] = None
+                if msg.reply_to and hasattr(msg.reply_to, "reply_to_msg_id"):
+                    reply_to_id = msg.reply_to.reply_to_msg_id
 
-            snowball_set.update(tg_targets)
+                # Engagement metrics
+                views = getattr(msg, "views",    None)
+                forwards_count = getattr(msg, "forwards", None)
+                reactions = _extract_reactions(msg)
 
-            media_type = _classify_media_type(msg)
+                # Entities
+                tg_entities = _extract_entities(msg)
+                hashtags = _extract_hashtags(text) if text else []
+                tg_targets = _extract_tg_targets(text) if text else []
+                urls = _URL_RE.findall(text) if text else []
 
-            messages.append(CollectedMessage(
-                _id                   = f"{metadata.telegram_id}_{msg.id}",
-                chat_id               = metadata.telegram_id,
-                chat_username         = metadata.username,
-                message_id            = msg.id,
-                text                  = text,
-                date                  = msg.date,
-                edit_date             = getattr(msg, "edit_date", None),
-                is_pinned             = bool(getattr(msg, "pinned", False)),
-                author_id             = author_id,
-                is_bot_author         = is_bot_author,
-                is_verified_author    = is_verified_author,
-                reply_to_message_id   = reply_to_id,
-                is_forwarded          = is_forwarded,
-                forwarded_from_id     = fwd_id,
-                forwarded_from_type   = fwd_type,
-                forwarded_from_name   = fwd_name,
-                forwarded_date        = fwd_date,
-                forwarded_message_id  = fwd_msg_id,
-                views                 = views,
-                forwards_count        = forwards_count,
-                reactions             = reactions,
-                has_media             = bool(msg.media),
-                media_type            = media_type,
-                entities              = tg_entities,
-                hashtags              = hashtags,
-                outbound_links        = urls,
-                outbound_tg_usernames = tg_targets,
-            ))
-            await asyncio.sleep(ITER_SLEEP_SEC)
+                snowball_set.update(tg_targets)
+
+                media_type = _classify_media_type(msg)
+
+                messages.append(CollectedMessage(
+                    _id                   = f"{metadata.telegram_id}_{msg.id}",
+                    chat_id               = metadata.telegram_id,
+                    chat_username         = metadata.username,
+                    message_id            = msg.id,
+                    text                  = text,
+                    date                  = msg.date,
+                    edit_date             = getattr(msg, "edit_date", None),
+                    is_pinned             = bool(getattr(msg, "pinned", False)),
+                    author_id             = author_id,
+                    is_bot_author         = is_bot_author,
+                    is_verified_author    = is_verified_author,
+                    reply_to_message_id   = reply_to_id,
+                    is_forwarded          = is_forwarded,
+                    forwarded_from_id     = fwd_id,
+                    forwarded_from_type   = fwd_type,
+                    forwarded_from_name   = fwd_name,
+                    forwarded_date        = fwd_date,
+                    forwarded_message_id  = fwd_msg_id,
+                    views                 = views,
+                    forwards_count        = forwards_count,
+                    reactions             = reactions,
+                    has_media             = bool(msg.media),
+                    media_type            = media_type,
+                    entities              = tg_entities,
+                    hashtags              = hashtags,
+                    outbound_links        = urls,
+                    outbound_tg_usernames = tg_targets,
+                ))
+                await asyncio.sleep(ITER_SLEEP_SEC)
 
         if metadata.username:
             snowball_set.discard(metadata.username.lower())
@@ -554,10 +595,10 @@ class TelegramCollector:
         await asyncio.sleep(CHAT_SLEEP_SEC)
 
         return CollectionResult(
-            metadata           = metadata,
-            messages           = messages,
+            metadata = metadata,
+            messages = messages,
             snowball_usernames = list(snowball_set),
-            has_ttl            = False,
+            has_ttl = False,
         )
 
     async def __aenter__(self):
