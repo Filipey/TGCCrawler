@@ -122,8 +122,8 @@ class RoBERTaCryptoClassifier:
     def __init__(
         self,
         model_path:   str,
-        crypto_label: str   = "crypto",
-        threshold:    float = 0.7,
+        crypto_label: int   = 1,
+        threshold:    float = 0.5,
         batch_size:   int   = 32,
         use_gpu:      bool  = False,
     ):
@@ -153,8 +153,8 @@ class RoBERTaCryptoClassifier:
         except Exception as exc:
             raise RuntimeError(f"Failed to load RoBERTa model: {exc}") from exc
 
-    def _map_label(self, label: str) -> bool:
-        return label.lower() == self.crypto_label.lower()
+    def _map_label(self, label: int) -> bool:
+        return label == self.crypto_label
 
     def _chunk(self, texts: list[str]) -> list[list[str]]:
         return [texts[i: i + self.batch_size] for i in range(0, len(texts), self.batch_size)]
@@ -169,7 +169,7 @@ class RoBERTaCryptoClassifier:
 
         crypto_scores: list[float] = []
         n_crypto      = 0
-        label_counts: dict[str, int] = {}
+        label_counts: dict[int, int] = {}
 
         for res in all_results:
             label = res["label"]
