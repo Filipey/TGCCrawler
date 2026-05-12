@@ -26,7 +26,7 @@ STATUS_ERROR              = "error"
 # Snowball chats use this window when it yields >= SNOWBALL_MIN_MESSAGES,
 # otherwise fall back to the last SNOWBALL_FALLBACK_LIMIT messages (no date bound).
 COLLECT_DATE_FROM = datetime(2026, 3, 1,  0,  0,  0, tzinfo=timezone.utc)
-COLLECT_DATE_TO   = datetime(2026, 4, 1, 23, 59, 59, tzinfo=timezone.utc)
+COLLECT_DATE_TO   = datetime(2026, 5, 12, 23, 59, 59, tzinfo=timezone.utc)
 
 # If a snowball chat has fewer than this many messages in the 30-day window,
 # fall back to collecting the last SNOWBALL_FALLBACK_LIMIT messages regardless
