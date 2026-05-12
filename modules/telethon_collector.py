@@ -331,6 +331,12 @@ class TelegramCollector:
                     logger.info("[telethon] Stale takeout session finished.")
                 except Exception as fin_exc:
                     logger.warning(f"[telethon] Could not finish stale takeout: {fin_exc}")
+                    # If Telegram rejected the finish (e.g. "invalidated by
+                    # another export session"), the session is already gone
+                    # on their side — clear the stale ID from the session
+                    # file so the retry __aenter__ can start fresh.
+                    self.client.session.takeout_id = None
+                    self.client.session.save()
                 # Re-create the context manager since __aenter__ already failed
                 self._takeout_ctx = self.client.takeout(
                     channels=True,
