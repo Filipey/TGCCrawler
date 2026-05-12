@@ -40,7 +40,6 @@ from typing import Any, Optional
 from telethon import TelegramClient, functions, types
 from telethon.errors import (ChannelPrivateError, FloodWaitError,
                              UsernameInvalidError, UsernameNotOccupiedError)
-from telethon.tl.functions.account import FinishTakeoutSessionRequest
 from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.tl.functions.messages import GetFullChatRequest
 
@@ -300,7 +299,14 @@ class TelegramCollector:
         """Opens a single takeout session for the lifetime of this collector.
 
         If Telegram rejects the request because a previous session was never
-        finished (e.g. the process was killed), we force-finish it first and retry.
+        finished (e.g. the process was killed with Ctrl+C), we recover by
+        finishing the stale session first, then retrying.
+
+        The takeout ID is stored in client.session.takeout_id (the SQLite
+        session file), so it survives process restarts.  Recovery works by
+        creating a finish-only TakeoutClient — its __aexit__ reads the
+        persisted ID and sends FinishTakeoutSessionRequest wrapped in
+        InvokeWithTakeoutRequest, which is what Telegram requires.
         """
         self._takeout_ctx = self.client.takeout(
             channels=True,
@@ -316,9 +322,21 @@ class TelegramCollector:
                     "finishing it before retrying..."
                 )
                 try:
-                    await self.client(FinishTakeoutSessionRequest(success=False))
+                    # Use a finish-only TakeoutClient: __aexit__ reads
+                    # session.takeout_id (already set in the session file)
+                    # and sends FinishTakeoutSessionRequest via
+                    # InvokeWithTakeoutRequest — the form Telegram requires.
+                    finisher = self.client.takeout()
+                    await finisher.__aexit__(None, None, None)
+                    logger.info("[telethon] Stale takeout session finished.")
                 except Exception as fin_exc:
                     logger.warning(f"[telethon] Could not finish stale takeout: {fin_exc}")
+                # Re-create the context manager since __aenter__ already failed
+                self._takeout_ctx = self.client.takeout(
+                    channels=True,
+                    chats=True,
+                    megagroups=True,
+                )
                 self._takeout = await self._takeout_ctx.__aenter__()
             else:
                 raise
