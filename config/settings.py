@@ -55,3 +55,7 @@ SCRAPER_RETRIES = 3
 
 LOG_DIR   = "logs"
 LOG_LEVEL = "INFO"
+
+# JSONL export — messages are written to {EXPORT_BASE_DIR}/{source}/{date}.jsonl
+EXPORT_BASE_DIR    = "data/messages"
+EXPORT_ENABLED     = True

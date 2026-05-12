@@ -44,12 +44,14 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from config.settings import (COLLECT_DATE_FROM, COLLECT_DATE_TO,
+                             EXPORT_BASE_DIR, EXPORT_ENABLED,
                              LANGUAGE_ENGLISH_THRESHOLD, LANGUAGE_MIN_CHARS,
                              LANGUAGE_USE_LANGID, ROBERTA_BATCH_SIZE,
                              ROBERTA_CRYPTO_LABEL, ROBERTA_MODEL_PATH,
                              ROBERTA_THRESHOLD, SNOWBALL_FALLBACK_LIMIT,
                              SNOWBALL_MIN_MESSAGES, STATUS_PENDING)
 from modules.db_manager import DBManager
+from modules.json_exporter import JsonExporter
 from modules.language_detector import build_language_detector
 from modules.roberta_classifier import build_classifier
 from modules.telethon_collector import TelegramCollector
@@ -96,6 +98,7 @@ class PipelineOrchestrator:
 
         self.db        = DBManager(config_file)
         self.collector = TelegramCollector(config_file)
+        self.exporter  = JsonExporter(EXPORT_BASE_DIR) if EXPORT_ENABLED else None
 
         self.lang_detector = build_language_detector(
             threshold  = LANGUAGE_ENGLISH_THRESHOLD,
@@ -238,6 +241,13 @@ class PipelineOrchestrator:
             msg_dicts = [self._serialise_message(m) for m in result.messages]
             inserted  = self.db.bulk_insert_messages(msg_dicts)
             logger.info(f"[{chat_key}] {inserted}/{len(msg_dicts)} messages stored.")
+
+            if self.exporter is not None:
+                self.exporter.write_messages(
+                    messages   = msg_dicts,
+                    source     = source,
+                    crawl_date = datetime.now(timezone.utc).date(),
+                )
 
             # Step 8: Mark as analysed
             meta = result.metadata
