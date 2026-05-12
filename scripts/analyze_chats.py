@@ -74,6 +74,12 @@ logger = logging.getLogger("analyse")
 # Everything else is a snowball candidate and uses the fallback policy.
 _SEED_SOURCES = frozenset({"tgstats", "telegramchannels"})
 
+_TGSTATS_TIER = frozenset({"tgstats", "snowball_tgstats"})
+
+
+def _snowball_source(parent_source: str) -> str:
+    return "snowball_tgstats" if parent_source in _TGSTATS_TIER else "snowball"
+
 
 # Core logic
 
@@ -261,7 +267,7 @@ async def process_chat(
         if result.snowball_usernames:
             added = db.bulk_upsert_pending(
                 usernames = result.snowball_usernames,
-                source    = "snowball",
+                source    = _snowball_source(source),
             )
             logger.info(
                 f"[{chat_key}] Snowball: "

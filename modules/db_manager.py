@@ -145,13 +145,18 @@ class DBManager:
         return sum(self.upsert_chat_pending(u, source=source) for u in usernames)
 
     # Sources are tried in this order before falling back to anything remaining.
-    _SOURCE_PRIORITY = ["telegramchannels", "snowball", "tgstats"]
+    # snowball          = discovered from telegramchannels (or their own snowballs)
+    # snowball_tgstats  = discovered from tgstats (or its snowballs)
+    _SOURCE_PRIORITY = ["telegramchannels", "snowball", "tgstats", "snowball_tgstats"]
 
     def pop_next_pending(self) -> Optional[dict]:
         """Pops the next pending chat with source-aware priority.
 
-        Order: telegramchannels (English-labeled) -> snowball (derived from
-        known-English channels) -> tgstats -> any other source.
+        Order:
+          1. telegramchannels  — English-labelled seeds
+          2. snowball          — discovered from telegramchannels tier
+          3. tgstats           — unfiltered seeds
+          4. snowball_tgstats  — discovered from tgstats tier
         Within each tier, oldest entry wins (FIFO).
         """
         for source in self._SOURCE_PRIORITY:

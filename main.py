@@ -69,6 +69,15 @@ logger = logging.getLogger("main")
 # Everything else is treated as a snowball candidate with unknown activity.
 _SEED_SOURCES = frozenset({"tgstats", "telegramchannels"})
 
+# Sources belonging to the tgstats tier — their snowballs stay in that tier
+# so that all tgstats seeds are exhausted before any tgstats snowballs run.
+_TGSTATS_TIER = frozenset({"tgstats", "snowball_tgstats"})
+
+
+def _snowball_source(parent_source: str) -> str:
+    """Returns the source tag to use when enqueuing snowball discoveries."""
+    return "snowball_tgstats" if parent_source in _TGSTATS_TIER else "snowball"
+
 
 def load_config(path: str = "config/config.ini") -> configparser.ConfigParser:
     cfg = configparser.ConfigParser()
@@ -276,7 +285,7 @@ class PipelineOrchestrator:
             if result.snowball_usernames:
                 added = self.db.bulk_upsert_pending(
                     usernames = result.snowball_usernames,
-                    source    = "snowball",
+                    source    = _snowball_source(source),
                 )
                 logger.info(
                     f"[{chat_key}] Snowball: "
