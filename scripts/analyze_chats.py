@@ -271,8 +271,10 @@ async def process_chat(
         return "analysed"
 
     except ValueError as exc:
-        db.mark_chat_error(chat_key, str(exc))
-        return "error"
+        logger.info(f"[{chat_key}] Username not found — discarding. ({exc})")
+        if not dry_run:
+            db.mark_chat_discarded(chat_key, reason="not_found")
+        return "discarded_not_found"
 
     except Exception as exc:
         logger.exception(f"[{chat_key}] Unexpected error: {exc}")
@@ -304,7 +306,8 @@ async def run(args: argparse.Namespace) -> None:
 
     counts = {
         "analysed": 0, "discarded_ttl": 0,
-        "discarded_language": 0, "error": 0, "dry_run": 0,
+        "discarded_language": 0, "discarded_not_found": 0,
+        "error": 0, "dry_run": 0,
     }
     processed = 0
 

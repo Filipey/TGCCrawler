@@ -18,8 +18,9 @@ STATUS_ANALYSED           = "analysed"            # collected + scored; threshol
 STATUS_COLLECTED          = "collected"           # reserved for post-threshold confirmation
 STATUS_DISCARDED          = "discarded"           # failed crypto fraction threshold
 STATUS_DISCARDED_LANGUAGE = "discarded_language"  # failed English majority check
-STATUS_DISCARDED_TTL      = "discarded_ttl"       # chat uses disappearing messages
-STATUS_ERROR              = "error"
+STATUS_DISCARDED_TTL       = "discarded_ttl"       # chat uses disappearing messages
+STATUS_DISCARDED_NOT_FOUND = "discarded_not_found" # username no longer exists on Telegram
+STATUS_ERROR               = "error"
 
 # Fixed crawl window: March 2026 (last 30 days before the 2026-04-01 cutoff).
 # Seed chats always use this window.

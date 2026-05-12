@@ -284,7 +284,8 @@ class PipelineOrchestrator:
                 )
 
         except ValueError as exc:
-            self.db.mark_chat_error(chat_key, str(exc))
+            logger.info(f"[{chat_key}] Username not found — discarding. ({exc})")
+            self.db.mark_chat_discarded(chat_key, reason="not_found")
 
         except Exception as exc:
             logger.exception(f"[{chat_key}] Unexpected error: {exc}")

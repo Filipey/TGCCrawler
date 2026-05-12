@@ -461,7 +461,7 @@ class TelegramCollector:
                         f"FloodWait persists after waiting for '{username}': "
                         f"{exc.seconds}s required"
                     ) from exc
-            except (UsernameInvalidError, UsernameNotOccupiedError) as exc:
+            except (UsernameInvalidError, UsernameNotOccupiedError, ValueError) as exc:
                 raise ValueError(f"Username not found or invalid: '{username}'") from exc
             except Exception as exc:
                 raise RuntimeError(f"Failed to resolve entity '{username}': {exc}") from exc
