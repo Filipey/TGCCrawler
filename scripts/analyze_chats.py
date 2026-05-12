@@ -161,10 +161,10 @@ async def process_chat(
             return "discarded_ttl"
 
         if not result.messages:
-            logger.warning(f"[{chat_key}] No messages collected — marking error.")
+            logger.info(f"[{chat_key}] No messages in window — discarding.")
             if not dry_run:
-                db.mark_chat_error(chat_key, "No messages collected in window.")
-            return "error"
+                db.mark_chat_discarded(chat_key, reason="no_messages")
+            return "discarded_no_messages"
 
         # Language detection
         lang_result  = lang_det.detect(result.messages)
@@ -307,7 +307,7 @@ async def run(args: argparse.Namespace) -> None:
     counts = {
         "analysed": 0, "discarded_ttl": 0,
         "discarded_language": 0, "discarded_not_found": 0,
-        "error": 0, "dry_run": 0,
+        "discarded_no_messages": 0, "error": 0, "dry_run": 0,
     }
     processed = 0
 

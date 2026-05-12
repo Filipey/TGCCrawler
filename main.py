@@ -183,8 +183,8 @@ class PipelineOrchestrator:
                 return
 
             if not result.messages:
-                logger.warning(f"[{chat_key}] No messages collected — marking error.")
-                self.db.mark_chat_error(chat_key, "No messages collected in window.")
+                logger.info(f"[{chat_key}] No messages in window — discarding.")
+                self.db.mark_chat_discarded(chat_key, reason="no_messages")
                 return
 
             # Step 4: Language detection
