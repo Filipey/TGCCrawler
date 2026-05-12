@@ -52,7 +52,7 @@ from config.settings import (COLLECT_DATE_FROM, COLLECT_DATE_TO,
 from modules.db_manager import DBManager
 from modules.language_detector import build_language_detector
 from modules.roberta_classifier import build_classifier
-from modules.telethon_collector import TelegramCollector
+from modules.telethon_collector import NotAChannelError, TelegramCollector
 
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
@@ -282,6 +282,10 @@ class PipelineOrchestrator:
                     f"[{chat_key}] Snowball: "
                     f"{len(result.snowball_usernames)} candidates, {added} new."
                 )
+
+        except NotAChannelError as exc:
+            logger.info(f"[{chat_key}] User account, not a channel — discarding. ({exc})")
+            self.db.mark_chat_discarded(chat_key, reason="user")
 
         except ValueError as exc:
             logger.info(f"[{chat_key}] Username not found — discarding. ({exc})")

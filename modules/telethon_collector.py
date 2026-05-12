@@ -47,6 +47,10 @@ from config.settings import CHAT_SLEEP_SEC, ITER_SLEEP_SEC
 
 logger = logging.getLogger(__name__)
 
+
+class NotAChannelError(ValueError):
+    """Raised when a username resolves to a user account instead of a channel or group."""
+
 # Regex patterns for text entity extraction
 _TG_MENTION_RE = re.compile(r"@([\w]{5,32})")
 _TG_LINK_RE    = re.compile(r"t(?:elegram)?\.me/([\w]{5,32})", re.IGNORECASE)
@@ -165,10 +169,21 @@ def _peer_id_type(peer) -> tuple[Optional[int], Optional[str]]:
 
 
 def _extract_tg_targets(text: str) -> list[str]:
+    """All @mentions and t.me/ links — stored in outbound_tg_usernames for research."""
     mentions = _TG_MENTION_RE.findall(text)
     links    = _TG_LINK_RE.findall(text)
     combined = [u.lower() for u in mentions + links]
     return list(dict.fromkeys(combined))
+
+
+def _extract_tg_links(text: str) -> list[str]:
+    """Only t.me/ links — used for snowballing.
+
+    @mentions in channel posts are almost always users being tagged.
+    t.me/ links are almost always channels or groups being referenced.
+    Using only links keeps users out of the snowball queue.
+    """
+    return list(dict.fromkeys(u.lower() for u in _TG_LINK_RE.findall(text)))
 
 
 def _extract_hashtags(text: str) -> list[str]:
@@ -490,6 +505,11 @@ class TelegramCollector:
             except Exception as exc:
                 raise RuntimeError(f"Failed to resolve entity '{username}': {exc}") from exc
 
+        if isinstance(entity, types.User):
+            raise NotAChannelError(
+                f"'{username}' is a user account, not a channel or group"
+            )
+
         metadata      = await self._get_chat_metadata(entity)
         messages:     list[CollectedMessage] = []
         snowball_set: set[str]               = set()
@@ -604,11 +624,12 @@ class TelegramCollector:
 
             # Entities
             tg_entities = _extract_entities(msg)
-            hashtags = _extract_hashtags(text) if text else []
-            tg_targets = _extract_tg_targets(text) if text else []
-            urls = _URL_RE.findall(text) if text else []
+            hashtags    = _extract_hashtags(text) if text else []
+            tg_targets  = _extract_tg_targets(text) if text else []
+            tg_links    = _extract_tg_links(text)   if text else []
+            urls        = _URL_RE.findall(text)      if text else []
 
-            snowball_set.update(tg_targets)
+            snowball_set.update(tg_links)  # links only — @mentions are mostly users
 
             media_type = _classify_media_type(msg)
 

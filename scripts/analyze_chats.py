@@ -55,7 +55,7 @@ from config.settings import (COLLECT_DATE_FROM, COLLECT_DATE_TO,
 from modules.db_manager import DBManager
 from modules.language_detector import build_language_detector
 from modules.roberta_classifier import build_classifier
-from modules.telethon_collector import TelegramCollector
+from modules.telethon_collector import NotAChannelError, TelegramCollector
 
 # Logging
 
@@ -270,6 +270,12 @@ async def process_chat(
 
         return "analysed"
 
+    except NotAChannelError as exc:
+        logger.info(f"[{chat_key}] User account, not a channel — discarding. ({exc})")
+        if not dry_run:
+            db.mark_chat_discarded(chat_key, reason="user")
+        return "discarded_user"
+
     except ValueError as exc:
         logger.info(f"[{chat_key}] Username not found — discarding. ({exc})")
         if not dry_run:
@@ -307,7 +313,8 @@ async def run(args: argparse.Namespace) -> None:
     counts = {
         "analysed": 0, "discarded_ttl": 0,
         "discarded_language": 0, "discarded_not_found": 0,
-        "discarded_no_messages": 0, "error": 0, "dry_run": 0,
+        "discarded_no_messages": 0, "discarded_user": 0,
+        "error": 0, "dry_run": 0,
     }
     processed = 0
 

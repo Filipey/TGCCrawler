@@ -22,7 +22,7 @@ from config.settings import (COLLECTION_CHATS, COLLECTION_MESSAGES,
                              MONGO_DB_NAME, STATUS_ANALYSED, STATUS_COLLECTED,
                              STATUS_DISCARDED, STATUS_ERROR, STATUS_PENDING,
                              STATUS_RUNNING, STATUS_DISCARDED_NOT_FOUND,
-                             STATUS_DISCARDED_NO_MESSAGES)
+                             STATUS_DISCARDED_NO_MESSAGES, STATUS_DISCARDED_USER)
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +237,7 @@ class DBManager:
             "ttl":          STATUS_DISCARDED_TTL,
             "not_found":    STATUS_DISCARDED_NOT_FOUND,
             "no_messages":  STATUS_DISCARDED_NO_MESSAGES,
+            "user":         STATUS_DISCARDED_USER,
         }
         status = status_map.get(reason, f"discarded_{reason}")
         self._chats.update_one(
@@ -287,7 +288,8 @@ class DBManager:
             STATUS_PENDING, STATUS_RUNNING, STATUS_ANALYSED,
             STATUS_COLLECTED, STATUS_DISCARDED,
             STATUS_DISCARDED_LANGUAGE, STATUS_DISCARDED_TTL,
-            STATUS_DISCARDED_NOT_FOUND, STATUS_DISCARDED_NO_MESSAGES, STATUS_ERROR,
+            STATUS_DISCARDED_NOT_FOUND, STATUS_DISCARDED_NO_MESSAGES,
+            STATUS_DISCARDED_USER, STATUS_ERROR,
         ]
         return "  ".join(f"{s}={counts.get(s, 0)}" for s in statuses)
 
