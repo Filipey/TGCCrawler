@@ -92,6 +92,7 @@ class DBManager:
         self._chats.create_index("status")
         self._chats.create_index("telegram_id", sparse=True)
         self._chats.create_index([("status", ASCENDING), ("added_at", ASCENDING)])
+        self._chats.create_index([("status", ASCENDING), ("source", ASCENDING), ("added_at", ASCENDING)])
         self._messages.create_index("chat_id")
         self._messages.create_index("date")
         self._messages.create_index("outbound_tg_usernames")
@@ -142,9 +143,28 @@ class DBManager:
     def bulk_upsert_pending(self, usernames: list[str], source: str) -> int:
         return sum(self.upsert_chat_pending(u, source=source) for u in usernames)
 
+    # Sources are tried in this order before falling back to anything remaining.
+    _SOURCE_PRIORITY = ["telegramchannels", "snowball", "tgstats"]
+
     def pop_next_pending(self) -> Optional[dict]:
+        """Pops the next pending chat with source-aware priority.
+
+        Order: telegramchannels (English-labeled) -> snowball (derived from
+        known-English channels) -> tgstats -> any other source.
+        Within each tier, oldest entry wins (FIFO).
+        """
+        for source in self._SOURCE_PRIORITY:
+            doc = self._chats.find_one_and_update(
+                {"status": STATUS_PENDING, "source": source},
+                {"$set": {"status": STATUS_RUNNING}},
+                sort=[("added_at", ASCENDING)],
+                return_document=True,
+            )
+            if doc is not None:
+                return doc
+        # Catch-all for any source not in the priority list
         return self._chats.find_one_and_update(
-            {"status": STATUS_PENDING},
+            {"status": STATUS_PENDING, "source": {"$nin": self._SOURCE_PRIORITY}},
             {"$set": {"status": STATUS_RUNNING}},
             sort=[("added_at", ASCENDING)],
             return_document=True,
