@@ -43,7 +43,8 @@ from telethon.errors import (ChannelPrivateError, FloodWaitError,
 from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.tl.functions.messages import GetFullChatRequest
 
-from config.settings import CHAT_SLEEP_SEC, ITER_SLEEP_SEC
+from config.settings import (CHAT_SLEEP_SEC, GET_ENTITY_MIN_INTERVAL_SEC,
+                             ITER_SLEEP_SEC)
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +305,25 @@ class TelegramCollector:
         self._takeout_ctx    = None
         self._takeout        = None
         self._entity_cache: dict[int, Optional[str]] = {}
+        self._last_get_entity_at: float = 0.0
+
+    async def _rate_limited_get_entity(self, target):
+        """Throttled wrapper around client.get_entity.
+
+        Entity resolution on the regular (non-takeout) API is the hottest
+        rate-limit hotspot.  Going faster than ~20-30 calls/min triggers
+        multi-hour FloodWait penalties.  This wrapper enforces a minimum
+        interval between consecutive calls across the entire collector
+        lifetime, regardless of whether each channel succeeded or failed fast.
+        """
+        loop    = asyncio.get_event_loop()
+        elapsed = loop.time() - self._last_get_entity_at
+        if elapsed < GET_ENTITY_MIN_INTERVAL_SEC:
+            await asyncio.sleep(GET_ENTITY_MIN_INTERVAL_SEC - elapsed)
+        try:
+            return await self.client.get_entity(target)
+        finally:
+            self._last_get_entity_at = loop.time()
 
     async def start(self) -> None:
         await self.client.start(phone=self.phone)
@@ -486,7 +506,7 @@ class TelegramCollector:
         # Resolve entity - retry once after honouring any FloodWait
         for attempt in range(2):
             try:
-                entity = await self.client.get_entity(username)
+                entity = await self._rate_limited_get_entity(username)
                 break
             except FloodWaitError as exc:
                 if attempt == 0:
@@ -591,7 +611,7 @@ class TelegramCollector:
                     channel_id = msg.forward.from_id.channel_id
                     if channel_id not in self._entity_cache:
                         try:
-                            fwd_entity = await self.client.get_entity(msg.forward.from_id)
+                            fwd_entity = await self._rate_limited_get_entity(msg.forward.from_id)
                             self._entity_cache[channel_id] = getattr(fwd_entity, "username", None)
                         except Exception:
                             self._entity_cache[channel_id] = None

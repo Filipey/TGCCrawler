@@ -40,6 +40,12 @@ SNOWBALL_FALLBACK_LIMIT    = 10_000
 ITER_SLEEP_SEC  = 0.0001
 CHAT_SLEEP_SEC  = 2
 
+# Minimum interval between get_entity calls on the regular (non-takeout) client.
+# Telegram rate-limits entity resolution aggressively (~20-30/min); going faster
+# triggers multi-hour FloodWait penalties.  This throttle is enforced across the
+# whole collector lifetime, regardless of whether channels succeed or fail fast.
+GET_ENTITY_MIN_INTERVAL_SEC = 2.5
+
 LANGUAGE_ENGLISH_THRESHOLD = 0.60
 LANGUAGE_MIN_CHARS         = 20
 LANGUAGE_USE_LANGID        = True
