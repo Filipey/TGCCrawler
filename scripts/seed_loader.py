@@ -56,7 +56,7 @@ def run(args):
     db    = DBManager() if not args.dry_run else None
     total_inserted = 0
 
-    sources = ["tgstats", "tgchannels"] if args.source == "all" else [args.source]
+    sources = ["tgstats", "telegramchannels"] if args.source == "all" else [args.source]
     types   = args.types or ["group", "channel"]
 
     for source in [s for s in sources if s != "manual"]:
@@ -106,7 +106,7 @@ def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--source",    choices=["tgstats", "tgchannels", "all"], default="all")
+    parser.add_argument("--source",    choices=["tgstats", "telegramchannels", "all"], default="all")
     parser.add_argument("--types",     nargs="+", choices=["group", "channel"], default=["group", "channel"])
     parser.add_argument("--max-pages", type=int,   default=3)
     parser.add_argument("--languages", nargs="*",  default=None)
