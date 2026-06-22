@@ -304,7 +304,6 @@ class TelegramCollector:
         )
         self._takeout_ctx    = None
         self._takeout        = None
-        self._entity_cache: dict[int, Optional[str]] = {}
         self._last_get_entity_at: float = 0.0
 
     async def _rate_limited_get_entity(self, target):
@@ -603,21 +602,6 @@ class TelegramCollector:
                 fwd_date = msg.forward.date
                 fwd_name = getattr(msg.forward, "from_name", None)
                 fwd_msg_id = getattr(msg.forward, "channel_post", None)
-
-                if (
-                    msg.forward.channel_post
-                    and isinstance(msg.forward.from_id, types.PeerChannel)
-                ):
-                    channel_id = msg.forward.from_id.channel_id
-                    if channel_id not in self._entity_cache:
-                        try:
-                            fwd_entity = await self._rate_limited_get_entity(msg.forward.from_id)
-                            self._entity_cache[channel_id] = getattr(fwd_entity, "username", None)
-                        except Exception:
-                            self._entity_cache[channel_id] = None
-                    cached_username = self._entity_cache[channel_id]
-                    if cached_username:
-                        snowball_set.add(cached_username.lower())
 
             # Authorship
             author_id: Optional[int] = None
