@@ -4,3 +4,4 @@ config/config.ini
 logs/
 sessions/
 *.sh
+.env
