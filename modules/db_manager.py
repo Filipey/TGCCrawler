@@ -45,7 +45,8 @@ Collection: chats
   "status":             str,            # pending | running | analysed | collected |
                                         # discarded | discarded_language |
                                         # discarded_ttl | error
-  "source":             str,
+  "source":             str,            # first source that discovered this chat (priority key)
+  "sources":            list[str],      # all sources where this chat has been seen
   "added_at":           datetime,
   "processed_at":       datetime | None,
   "error_msg":          str | None,
@@ -109,12 +110,13 @@ class DBManager:
         source:   str = "manual",
         extra:    Optional[dict] = None,
     ) -> bool:
-        doc: dict[str, Any] = {
-            "_id":                username.lower().lstrip("@"),
+        username_clean = username.lower().lstrip("@")
+        base_doc: dict[str, Any] = {
+            "_id":                username_clean,
             "telegram_id":        None,
             "type":               "unknown",
             "title":              None,
-            "username":           username.lower().lstrip("@"),
+            "username":           username_clean,
             "description":        None,
             "n_subscribers":      None,
             "is_scam":            False,
@@ -132,14 +134,20 @@ class DBManager:
             "collection_stats":   None,
         }
         if extra:
-            doc.update(extra)
-        try:
-            self._chats.insert_one(doc)
+            base_doc.update(extra)
+        result = self._chats.update_one(
+            {"_id": username_clean},
+            {
+                "$setOnInsert": base_doc,
+                "$addToSet":    {"sources": source},
+            },
+            upsert=True,
+        )
+        if result.upserted_id is not None:
             logger.info(f"[queue] Added '{username}' (source={source})")
             return True
-        except DuplicateKeyError:
-            logger.debug(f"[queue] Already exists: '{username}'")
-            return False
+        logger.debug(f"[queue] Already exists: '{username}' (source={source} recorded)")
+        return False
 
     def bulk_upsert_pending(self, usernames: list[str], source: str) -> int:
         return sum(self.upsert_chat_pending(u, source=source) for u in usernames)
@@ -147,7 +155,7 @@ class DBManager:
     # Sources are tried in this order before falling back to anything remaining.
     # Seeds are exhausted before any snowballs run; within snowballs,
     # telegramchannels-derived entries come before tgstats-derived ones.
-    _SOURCE_PRIORITY = ["telegramchannels", "tgstats", "snowball", "snowball_tgstats"]
+    _SOURCE_PRIORITY = ["telegramchannels", "tgstats", "snowball_telegramchannels", "snowball_tgstats"]
 
     def pop_next_pending(self) -> Optional[dict]:
         """Pops the next pending chat with source-aware priority.
