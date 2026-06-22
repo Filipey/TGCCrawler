@@ -78,7 +78,7 @@ _TGSTATS_TIER = frozenset({"tgstats", "snowball_tgstats"})
 
 
 def _snowball_source(parent_source: str) -> str:
-    return "snowball_tgstats" if parent_source in _TGSTATS_TIER else "snowball"
+    return "snowball_tgstats" if parent_source in _TGSTATS_TIER else "snowball_telegramchannels"
 
 
 # Core logic
