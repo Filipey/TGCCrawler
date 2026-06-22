@@ -53,7 +53,7 @@ LANGUAGE_USE_LANGID        = True
 ROBERTA_MODEL_PATH   = "models/roberta-crypto"
 ROBERTA_BATCH_SIZE   = 32
 ROBERTA_THRESHOLD    = 0.5
-ROBERTA_CRYPTO_LABEL = 1
+ROBERTA_CRYPTO_LABEL = "POS"  # model filipeasm18/roberta-binary-crypto-related-classifier uses "POS"/"NEG"
 
 SEED_SOURCES = {
     "tgstats":          "https://tgstat.com/ratings",

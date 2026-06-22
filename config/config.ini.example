@@ -9,6 +9,6 @@ uri        = mongodb://localhost:27017
 
 [RoBERTa]
 # Pode ser um caminho local ou um model_id do Hugging Face Hub
-model_path = models/roberta-crypto
+model_path = filipeasm18/roberta-binary-crypto-related-classifier
 # Se True, usa GPU (cuda); se False, força CPU
 use_gpu    = False

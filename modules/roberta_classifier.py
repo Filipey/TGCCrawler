@@ -153,7 +153,10 @@ class RoBERTaCryptoClassifier:
         except Exception as exc:
             raise RuntimeError(f"Failed to load RoBERTa model: {exc}") from exc
 
-    def _map_label(self, label: int) -> bool:
+    def _map_label(self, label: str) -> bool:
+        # Support both string labels ("POS"/"NEG") and LABEL_N style (index-based).
+        if isinstance(self.crypto_label, int):
+            return label == f"LABEL_{self.crypto_label}"
         return label == self.crypto_label
 
     def _chunk(self, texts: list[str]) -> list[list[str]]:
